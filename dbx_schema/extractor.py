@@ -65,7 +65,7 @@ class CatalogExtractor:
 
         # Build columns sorted by position
         sdk_columns = list(getattr(sdk_table, "columns", None) or [])
-        sdk_columns.sort(key=lambda c: (getattr(c, "position", None) or 9999))
+        sdk_columns.sort(key=lambda c: getattr(c, "position", None) or 9999)
 
         columns: list[Column] = []
         for sdk_col in sdk_columns:

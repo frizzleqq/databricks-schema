@@ -22,7 +22,7 @@ def _make_client(host: str | None, token: str | None):
 
 @app.command()
 def extract(
-    catalog: Annotated[str, typer.Option("--catalog", "-c", help="Catalog name")] = "lake_prod",
+    catalog: Annotated[str, typer.Argument(help="Catalog name")],
     schema: Annotated[
         list[str] | None, typer.Option("--schema", "-s", help="Schema filter (repeatable)")
     ] = None,
@@ -91,7 +91,7 @@ def list_catalogs(
 
 @app.command("list-schemas")
 def list_schemas(
-    catalog: Annotated[str, typer.Option("--catalog", "-c", help="Catalog name")] = "lake_prod",
+    catalog: Annotated[str, typer.Argument(help="Catalog name")],
     host: Annotated[
         str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
     ] = None,
