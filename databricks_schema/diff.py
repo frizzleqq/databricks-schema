@@ -117,7 +117,7 @@ def diff_schemas(live: Schema, stored: Schema) -> SchemaDiff:
     Returns a SchemaDiff describing what changed between the stored YAML state
     and the live catalog state.
     """
-    changes = _compare_fields(stored, live, ["comment", "tags"])
+    changes = _compare_fields(stored, live, ["comment", "owner", "tags"])
     table_diffs = _diff_tables(live.tables, stored.tables)
     status = "modified" if (changes or table_diffs) else "unchanged"
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)

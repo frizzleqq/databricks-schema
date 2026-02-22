@@ -61,6 +61,7 @@ class CatalogExtractor:
         return Schema(
             name=schema_name,
             comment=getattr(sdk_schema, "comment", None),
+            owner=getattr(sdk_schema, "owner", None),
             tables=tables,
             tags=schema_tags,
         )

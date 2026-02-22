@@ -10,8 +10,8 @@ from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Sc
 from databricks_schema.yaml_io import schema_to_yaml
 
 
-def _schema(name="main", comment=None, tables=None, tags=None):
-    return Schema(name=name, comment=comment, tables=tables or [], tags=tags or {})
+def _schema(name="main", comment=None, owner=None, tables=None, tags=None):
+    return Schema(name=name, comment=comment, owner=owner, tables=tables or [], tags=tags or {})
 
 
 def _table(name, comment=None, columns=None, tags=None, table_type=None, owner=None):
@@ -49,6 +49,15 @@ class TestDiffSchemas:
         assert result.changes[0].field == "comment"
         assert result.changes[0].old == "old comment"
         assert result.changes[0].new == "new comment"
+
+    def test_owner_changed(self):
+        stored = _schema(owner="alice")
+        live = _schema(owner="bob")
+        result = diff_schemas(live=live, stored=stored)
+        assert result.status == "modified"
+        assert result.changes[0].field == "owner"
+        assert result.changes[0].old == "alice"
+        assert result.changes[0].new == "bob"
 
     def test_tags_changed(self):
         stored = _schema(tags={"env": "prod"})

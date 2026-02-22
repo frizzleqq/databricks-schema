@@ -81,10 +81,12 @@ class TestCatalogExtractor:
         s1 = MagicMock()
         s1.name = "keep"
         s1.comment = None
+        s1.owner = None
         s1.tags = {}
         s2 = MagicMock()
         s2.name = "skip"
         s2.comment = None
+        s2.owner = None
         s2.tags = {}
         client.schemas.list.return_value = [s1, s2]
         client.tables.list.return_value = []
@@ -103,6 +105,7 @@ class TestCatalogExtractor:
         sys_schema = MagicMock()
         sys_schema.name = "information_schema"
         sys_schema.comment = None
+        sys_schema.owner = None
         sys_schema.tags = {}
         client.schemas.list.return_value = [sys_schema]
 
@@ -119,6 +122,7 @@ class TestCatalogExtractor:
         sys_schema = MagicMock()
         sys_schema.name = "information_schema"
         sys_schema.comment = None
+        sys_schema.owner = None
         sys_schema.tags = {}
         client.schemas.list.return_value = [sys_schema]
         client.tables.list.return_value = []
@@ -136,6 +140,7 @@ class TestCatalogExtractor:
         s = MagicMock()
         s.name = "main"
         s.comment = None
+        s.owner = None
         s.tags = {}
         client.schemas.list.return_value = [s]
 
@@ -162,6 +167,7 @@ class TestCatalogExtractor:
         s = MagicMock()
         s.name = "main"
         s.comment = None
+        s.owner = None
         s.tags = {}
         client.schemas.list.return_value = [s]
         client.tables.list.return_value = [_make_table_summary("orders")]
@@ -190,6 +196,7 @@ class TestCatalogExtractor:
         s = MagicMock()
         s.name = "main"
         s.comment = None
+        s.owner = None
         s.tags = {}
         client.schemas.list.return_value = [s]
         client.tables.list.return_value = [_make_table_summary("orders")]
@@ -224,6 +231,7 @@ class TestCatalogExtractor:
         s = MagicMock()
         s.name = "main"
         s.comment = None
+        s.owner = None
         s.tags = {}
         client.schemas.list.return_value = [s]
         client.tables.list.return_value = [_make_table_summary("t")]
@@ -239,6 +247,24 @@ class TestCatalogExtractor:
         assert table.created_at.tzinfo == UTC
         assert int(table.created_at.timestamp() * 1000) == created_at_ms
 
+    def test_schema_owner_extracted(self):
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        sdk_catalog.tags = {}
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = "data_team"
+        s.tags = {}
+        client.schemas.list.return_value = [s]
+        client.tables.list.return_value = []
+
+        catalog = extractor.extract_catalog("mycat")
+        assert catalog.schemas[0].owner == "data_team"
+
     def test_table_type_extracted(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
@@ -249,6 +275,7 @@ class TestCatalogExtractor:
         s = MagicMock()
         s.name = "main"
         s.comment = None
+        s.owner = None
         s.tags = {}
         client.schemas.list.return_value = [s]
         client.tables.list.return_value = [_make_table_summary("t")]

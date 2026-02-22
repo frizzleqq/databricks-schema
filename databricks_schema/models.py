@@ -43,6 +43,7 @@ class Table(BaseModel):
 class Schema(BaseModel):
     name: str
     comment: str | None = None
+    owner: str | None = None
     tables: list[Table] = Field(default_factory=list)
     tags: dict[str, str] = Field(default_factory=dict)
 
