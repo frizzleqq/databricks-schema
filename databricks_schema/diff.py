@@ -123,14 +123,19 @@ def diff_schemas(live: Schema, stored: Schema) -> SchemaDiff:
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)
 
 
-def diff_catalog_with_dir(catalog: Catalog, schema_dir: Path) -> CatalogDiff:
+def diff_catalog_with_dir(
+    catalog: Catalog,
+    schema_dir: Path,
+    ignore_added: frozenset[str] = frozenset({"default"}),
+) -> CatalogDiff:
     """Compare a Catalog against YAML files in schema_dir.
 
     For each .yaml file in schema_dir:
       - If the schema exists in the catalog: compare them.
       - If the schema is missing from the catalog: report as removed.
 
-    For each schema in the catalog without a .yaml file: report as added.
+    For each schema in the catalog without a .yaml file: report as added,
+    unless its name is in ignore_added (default: {"default"}).
     """
     stored: dict[str, Schema] = {}
     for yaml_file in sorted(schema_dir.glob("*.yaml")):
@@ -147,7 +152,7 @@ def diff_catalog_with_dir(catalog: Catalog, schema_dir: Path) -> CatalogDiff:
             schema_diffs.append(diff_schemas(live[name], stored_schema))
 
     for name in live:
-        if name not in stored:
+        if name not in stored and name not in ignore_added:
             schema_diffs.append(SchemaDiff(name=name, status="added"))
 
     return CatalogDiff(schemas=schema_diffs)

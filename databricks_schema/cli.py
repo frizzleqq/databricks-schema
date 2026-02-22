@@ -111,13 +111,13 @@ def diff(
         typer.echo(f"No YAML files found in {schema_dir}.", err=True)
         raise typer.Exit(code=2)
 
-    # Extract only schemas for which YAML files exist (unless filtered explicitly)
-    schema_filter = list(schema) if schema else [f.stem for f in yaml_files]
-
     client = _make_client(host, token)
     extractor = CatalogExtractor(client=client)
     print(f"Comparing catalog '{catalog}' against {schema_dir}...", file=sys.stderr)
-    catalog_obj = extractor.extract_catalog(catalog_name=catalog, schema_filter=schema_filter)
+    catalog_obj = extractor.extract_catalog(
+        catalog_name=catalog,
+        schema_filter=list(schema) if schema else None,
+    )
 
     result = diff_catalog_with_dir(catalog_obj, schema_dir)
 

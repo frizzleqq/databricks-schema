@@ -153,6 +153,34 @@ class TestDiffCatalogWithDir:
         added = next(s for s in result.schemas if s.name == "extra")
         assert added.status == "added"
 
+    def test_default_schema_not_reported_as_added(self, tmp_path: Path):
+        stored = _schema("main")
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
+        # catalog has main + default, but no default.yaml
+        catalog = Catalog(name="prod", schemas=[stored, _schema("default")])
+        result = diff_catalog_with_dir(catalog, tmp_path)
+        assert not any(s.name == "default" for s in result.schemas)
+        assert not result.has_changes
+
+    def test_default_schema_ignored_but_others_reported(self, tmp_path: Path):
+        stored = _schema("main")
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
+        # catalog has main + default + new_schema without YAML files
+        catalog = Catalog(name="prod", schemas=[stored, _schema("default"), _schema("new_schema")])
+        result = diff_catalog_with_dir(catalog, tmp_path)
+        assert not any(s.name == "default" for s in result.schemas)
+        new_diff = next(s for s in result.schemas if s.name == "new_schema")
+        assert new_diff.status == "added"
+        assert result.has_changes
+
+    def test_ignore_added_can_be_overridden(self, tmp_path: Path):
+        stored = _schema("main")
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
+        catalog = Catalog(name="prod", schemas=[stored, _schema("default")])
+        # passing empty frozenset means default is NOT ignored
+        result = diff_catalog_with_dir(catalog, tmp_path, ignore_added=frozenset())
+        assert any(s.name == "default" and s.status == "added" for s in result.schemas)
+
     def test_schema_removed_from_catalog(self, tmp_path: Path):
         stored = _schema("main")
         (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
