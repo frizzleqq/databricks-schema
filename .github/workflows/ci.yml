@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Format check
+        run: uv run ruff format --check databricks_schema/ tests/
+
+      - name: Lint
+        run: uv run ruff check databricks_schema/ tests/
+
+      - name: Tests
+        run: uv run pytest
