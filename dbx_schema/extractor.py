@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+from databricks.sdk import WorkspaceClient
+
+from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table, TableType
+
+_SYSTEM_SCHEMAS = {"information_schema"}
+
+
+class CatalogExtractor:
+    def __init__(self, client: WorkspaceClient | None = None) -> None:
+        self.client = client or WorkspaceClient()
+
+    def extract_catalog(
+        self,
+        catalog_name: str,
+        schema_filter: list[str] | None = None,
+        skip_system_schemas: bool = True,
+    ) -> Catalog:
+        sdk_catalog = self.client.catalogs.get(catalog_name)
+        raw_tags = getattr(sdk_catalog, "tags", None) or {}
+        catalog_tags = dict(raw_tags)
+
+        schemas: list[Schema] = []
+        for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
+            schema_name = sdk_schema.name or ""
+            if skip_system_schemas and schema_name in _SYSTEM_SCHEMAS:
+                continue
+            if schema_filter and schema_name not in schema_filter:
+                continue
+            schemas.append(self._extract_schema(catalog_name, sdk_schema))
+
+        return Catalog(
+            name=catalog_name,
+            comment=getattr(sdk_catalog, "comment", None),
+            schemas=schemas,
+            tags=catalog_tags,
+        )
+
+    def _extract_schema(self, catalog_name: str, sdk_schema) -> Schema:
+        schema_name = sdk_schema.name or ""
+        raw_tags = getattr(sdk_schema, "tags", None) or {}
+        schema_tags = dict(raw_tags)
+
+        tables: list[Table] = []
+        for sdk_table_summary in self.client.tables.list(
+            catalog_name=catalog_name, schema_name=schema_name
+        ):
+            table_name = sdk_table_summary.name or ""
+            full_name = f"{catalog_name}.{schema_name}.{table_name}"
+            table = self._extract_table(catalog_name, schema_name, full_name)
+            tables.append(table)
+
+        return Schema(
+            name=schema_name,
+            comment=getattr(sdk_schema, "comment", None),
+            tables=tables,
+            tags=schema_tags,
+        )
+
+    def _extract_table(self, catalog_name: str, schema_name: str, full_name: str) -> Table:
+        sdk_table = self.client.tables.get(full_name)
+        raw_tags = getattr(sdk_table, "tags", None) or {}
+        table_tags = dict(raw_tags)
+
+        # Build columns sorted by position
+        sdk_columns = list(getattr(sdk_table, "columns", None) or [])
+        sdk_columns.sort(key=lambda c: (getattr(c, "position", None) or 9999))
+
+        columns: list[Column] = []
+        for sdk_col in sdk_columns:
+            # Prefer type_text (e.g. "ARRAY<STRING>"), fall back to type_name
+            type_text = getattr(sdk_col, "type_text", None)
+            type_name = getattr(sdk_col, "type_name", None)
+            if type_text:
+                data_type = type_text
+            elif type_name is not None:
+                data_type = type_name.value if hasattr(type_name, "value") else str(type_name)
+            else:
+                data_type = "UNKNOWN"
+
+            col_tags = dict(getattr(sdk_col, "tags", None) or {})
+            columns.append(
+                Column(
+                    name=sdk_col.name or "",
+                    data_type=data_type,
+                    comment=getattr(sdk_col, "comment", None),
+                    nullable=(
+                        getattr(sdk_col, "nullable", True)
+                        if getattr(sdk_col, "nullable", None) is not None
+                        else True
+                    ),
+                    tags=col_tags,
+                )
+            )
+
+        # Parse constraints
+        primary_key: PrimaryKey | None = None
+        foreign_keys: list[ForeignKey] = []
+
+        for constraint in list(getattr(sdk_table, "table_constraints", None) or []):
+            pk = getattr(constraint, "primary_key_constraint", None)
+            if pk is not None:
+                primary_key = PrimaryKey(
+                    name=getattr(pk, "name", None),
+                    columns=list(getattr(pk, "child_columns", None) or []),
+                )
+
+            fk = getattr(constraint, "foreign_key_constraint", None)
+            if fk is not None:
+                parent_table = getattr(fk, "parent_table", None) or ""
+                parts = parent_table.split(".")
+                # Expected: catalog.schema.table
+                if len(parts) >= 3:
+                    ref_schema = parts[-2]
+                    ref_table = parts[-1]
+                elif len(parts) == 2:
+                    ref_schema = parts[0]
+                    ref_table = parts[1]
+                else:
+                    ref_schema = ""
+                    ref_table = parent_table
+
+                foreign_keys.append(
+                    ForeignKey(
+                        name=getattr(fk, "name", None),
+                        columns=list(getattr(fk, "child_columns", None) or []),
+                        ref_schema=ref_schema,
+                        ref_table=ref_table,
+                        ref_columns=list(getattr(fk, "parent_columns", None) or []),
+                    )
+                )
+
+        # Determine table_type
+        raw_type = getattr(sdk_table, "table_type", None)
+        table_type: TableType | None = None
+        if raw_type is not None:
+            type_val = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
+            try:
+                table_type = TableType(type_val)
+            except ValueError:
+                table_type = None
+
+        table_name = full_name.split(".")[-1]
+        return Table(
+            name=table_name,
+            table_type=table_type,
+            comment=getattr(sdk_table, "comment", None),
+            columns=columns,
+            primary_key=primary_key,
+            foreign_keys=foreign_keys,
+            tags=table_tags,
+            storage_location=getattr(sdk_table, "storage_location", None),
+        )
