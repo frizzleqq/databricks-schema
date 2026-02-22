@@ -16,6 +16,7 @@ class CatalogExtractor:
         catalog_name: str,
         schema_filter: list[str] | None = None,
         skip_system_schemas: bool = True,
+        include_storage_location: bool = False,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
         raw_tags = getattr(sdk_catalog, "tags", None) or {}
@@ -28,7 +29,7 @@ class CatalogExtractor:
                 continue
             if schema_filter and schema_name not in schema_filter:
                 continue
-            schemas.append(self._extract_schema(catalog_name, sdk_schema))
+            schemas.append(self._extract_schema(catalog_name, sdk_schema, include_storage_location))
 
         return Catalog(
             name=catalog_name,
@@ -37,7 +38,9 @@ class CatalogExtractor:
             tags=catalog_tags,
         )
 
-    def _extract_schema(self, catalog_name: str, sdk_schema) -> Schema:
+    def _extract_schema(
+        self, catalog_name: str, sdk_schema, include_storage_location: bool = False
+    ) -> Schema:
         schema_name = sdk_schema.name or ""
         raw_tags = getattr(sdk_schema, "tags", None) or {}
         schema_tags = dict(raw_tags)
@@ -48,7 +51,9 @@ class CatalogExtractor:
         ):
             table_name = sdk_table_summary.name or ""
             full_name = f"{catalog_name}.{schema_name}.{table_name}"
-            table = self._extract_table(catalog_name, schema_name, full_name)
+            table = self._extract_table(
+                catalog_name, schema_name, full_name, include_storage_location
+            )
             tables.append(table)
 
         return Schema(
@@ -58,7 +63,13 @@ class CatalogExtractor:
             tags=schema_tags,
         )
 
-    def _extract_table(self, catalog_name: str, schema_name: str, full_name: str) -> Table:
+    def _extract_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        full_name: str,
+        include_storage_location: bool = False,
+    ) -> Table:
         sdk_table = self.client.tables.get(full_name)
         raw_tags = getattr(sdk_table, "tags", None) or {}
         table_tags = dict(raw_tags)
@@ -150,5 +161,7 @@ class CatalogExtractor:
             primary_key=primary_key,
             foreign_keys=foreign_keys,
             tags=table_tags,
-            storage_location=getattr(sdk_table, "storage_location", None),
+            storage_location=(
+                getattr(sdk_table, "storage_location", None) if include_storage_location else None
+            ),
         )

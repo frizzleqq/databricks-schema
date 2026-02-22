@@ -33,6 +33,9 @@ def extract(
     include_system: Annotated[
         bool, typer.Option("--include-system", help="Include system schemas (information_schema)")
     ] = False,
+    storage_location: Annotated[
+        bool, typer.Option("--storage-location", help="Include storage_location in output")
+    ] = False,
     host: Annotated[
         str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
     ] = None,
@@ -53,6 +56,7 @@ def extract(
         catalog_name=catalog,
         schema_filter=list(schema) if schema else None,
         skip_system_schemas=not include_system,
+        include_storage_location=storage_location,
     )
 
     if output_dir is None:
