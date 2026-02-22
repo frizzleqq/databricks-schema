@@ -71,15 +71,6 @@ Include system schemas (`information_schema`):
 databricks-schema extract <catalog> --output-dir ./schemas/ --include-system
 ```
 
-Override auth inline:
-
-```bash
-databricks-schema extract <catalog> \
-  --host https://<workspace>.cloud.databricks.com \
-  --token <token> \
-  --output-dir ./schemas/
-```
-
 ### `diff`
 
 Compare the live catalog against previously extracted YAML files:
