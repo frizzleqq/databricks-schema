@@ -29,7 +29,7 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "W", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
