@@ -119,7 +119,11 @@ def diff(
         schema_filter=list(schema) if schema else None,
     )
 
-    result = diff_catalog_with_dir(catalog_obj, schema_dir)
+    result = diff_catalog_with_dir(
+        catalog_obj,
+        schema_dir,
+        schema_names=frozenset(schema) if schema else None,
+    )
 
     if not result.has_changes:
         print("No differences found.")

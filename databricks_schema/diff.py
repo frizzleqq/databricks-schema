@@ -127,18 +127,25 @@ def diff_catalog_with_dir(
     catalog: Catalog,
     schema_dir: Path,
     ignore_added: frozenset[str] = frozenset({"default"}),
+    schema_names: frozenset[str] | None = None,
 ) -> CatalogDiff:
     """Compare a Catalog against YAML files in schema_dir.
 
-    For each .yaml file in schema_dir:
+    For each .yaml file in schema_dir (limited to schema_names if provided):
       - If the schema exists in the catalog: compare them.
       - If the schema is missing from the catalog: report as removed.
 
     For each schema in the catalog without a .yaml file: report as added,
     unless its name is in ignore_added (default: {"default"}).
+
+    schema_names: if set, only YAML files whose stem is in this set are loaded.
+                  Use this when comparing a subset of schemas to avoid reporting
+                  unrelated schemas as removed.
     """
     stored: dict[str, Schema] = {}
     for yaml_file in sorted(schema_dir.glob("*.yaml")):
+        if schema_names is not None and yaml_file.stem not in schema_names:
+            continue
         schema = schema_from_yaml(yaml_file.read_text(encoding="utf-8"))
         stored[schema.name] = schema
 

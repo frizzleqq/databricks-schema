@@ -153,6 +153,19 @@ class TestDiffCatalogWithDir:
         added = next(s for s in result.schemas if s.name == "extra")
         assert added.status == "added"
 
+    def test_schema_names_filter_prevents_false_removed(self, tmp_path: Path):
+        # Both main.yaml and raw.yaml exist, but we only compare main
+        main = _schema("main")
+        raw = _schema("raw")
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(main))
+        (tmp_path / "raw.yaml").write_text(schema_to_yaml(raw))
+        # catalog only contains main (as if --schema main was passed)
+        catalog = Catalog(name="prod", schemas=[main])
+        result = diff_catalog_with_dir(catalog, tmp_path, schema_names=frozenset({"main"}))
+        # raw should NOT appear as removed
+        assert not any(s.name == "raw" for s in result.schemas)
+        assert not result.has_changes
+
     def test_default_schema_not_reported_as_added(self, tmp_path: Path):
         stored = _schema("main")
         (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
