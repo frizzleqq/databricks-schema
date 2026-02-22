@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from dbx_schema.models import (
+from databricks_schema.models import (
     Catalog,
     Column,
     ForeignKey,

@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
-from dbx_schema.extractor import CatalogExtractor
-from dbx_schema.models import TableType
+from databricks_schema.extractor import CatalogExtractor
+from databricks_schema.models import TableType
 
 
 def _make_col(name, position, type_text=None, type_name=None, nullable=True, comment=None):

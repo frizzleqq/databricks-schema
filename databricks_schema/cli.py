@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-app = typer.Typer(name="dbx-schema", no_args_is_help=True)
+app = typer.Typer(name="databricks-schema", no_args_is_help=True)
 
 
 def _make_client(host: str | None, token: str | None):

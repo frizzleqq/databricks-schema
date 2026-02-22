@@ -1,7 +1,15 @@
 import yaml
 
-from dbx_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table, TableType
-from dbx_schema.yaml_io import (
+from databricks_schema.models import (
+    Catalog,
+    Column,
+    ForeignKey,
+    PrimaryKey,
+    Schema,
+    Table,
+    TableType,
+)
+from databricks_schema.yaml_io import (
     catalog_from_yaml,
     catalog_to_yaml,
     schema_from_yaml,
