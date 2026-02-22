@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to upload assets to the release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Verify version matches tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          TAG_VERSION="${TAG#v}"
+          TOML_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Tag version:    $TAG_VERSION"
+          echo "pyproject.toml: $TOML_VERSION"
+          if [ "$TAG_VERSION" != "$TOML_VERSION" ]; then
+            echo "ERROR: version mismatch — update pyproject.toml before tagging"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Lint and test
+        run: |
+          uv run ruff check databricks_schema/ tests/
+          uv run pytest
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Upload artifacts to release
+        run: gh release upload "${{ github.ref_name }}" dist/* --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
