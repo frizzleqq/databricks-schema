@@ -21,12 +21,14 @@ databricks_schema/
   models.py      # Pydantic v2 models: Catalog, Schema, Table, Column, PrimaryKey, ForeignKey
   extractor.py   # CatalogExtractor — wraps databricks-sdk
   yaml_io.py     # schema/catalog to/from YAML; _strip_empty removes None + empty collections
-  cli.py         # Typer CLI: extract, list-catalogs, list-schemas
+  diff.py        # diff_schemas / diff_catalog_with_dir; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
+  cli.py         # Typer CLI: extract, diff, list-catalogs, list-schemas
   __init__.py    # public re-exports
 tests/
   test_models.py
   test_extractor.py  # all SDK calls mocked with MagicMock
   test_yaml_io.py
+  test_diff.py       # pure model comparison, no SDK calls
 ```
 
 ## Conventions
@@ -43,3 +45,5 @@ tests/
 - `TableType` is re-exported from `databricks.sdk.service.catalog` — do not redefine it
 - `Table.created_at` is stored as UTC `datetime`, converted from SDK milliseconds timestamp
 - `storage_location` is opt-in via `--storage-location` flag (excluded by default)
+- `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
+- Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)

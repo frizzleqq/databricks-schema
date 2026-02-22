@@ -4,9 +4,10 @@ A CLI tool and Python library for extracting Databricks Unity Catalog schemas to
 
 ## Features
 
-- Extracts catalog → schemas → tables → columns (with types, comments, nullability)
+- Extracts catalog → schemas → tables → columns (with types, comments, nullability, owner, created_at)
 - Captures primary keys, foreign keys, and Unity Catalog governance tags
 - Outputs one YAML file per schema for easy diffing and version control
+- Compares live catalog state against local YAML files (`diff` command)
 - Pydantic v2 models as the intermediate representation (ready for bidirectional sync)
 
 ## Installation
@@ -79,6 +80,35 @@ databricks-schema extract <catalog> \
   --output-dir ./schemas/
 ```
 
+### `diff`
+
+Compare the live catalog against previously extracted YAML files:
+
+```bash
+databricks-schema diff <catalog> ./schemas/
+```
+
+Compare specific schemas only:
+
+```bash
+databricks-schema diff <catalog> ./schemas/ --schema main --schema raw
+```
+
+Exits with code `0` if no differences are found, `1` if there are — making it suitable for CI pipelines. Output example:
+
+```
+~ Schema: main [MODIFIED]
+  ~ Table: users [MODIFIED]
+      owner: 'alice' -> 'bob'
+    ~ Column: email [MODIFIED]
+        data_type: 'STRING' -> 'VARCHAR(255)'
+    + Column: phone [ADDED]
+  + Table: events [ADDED]
+- Schema: legacy [REMOVED]
+```
+
+Markers: `+` added in catalog, `-` removed from catalog, `~` modified.
+
 ### `list-catalogs`
 
 List all accessible catalogs:
@@ -138,7 +168,9 @@ Fields with no value (null comments, empty tag dicts, empty FK lists) are omitte
 ## Python Library Usage
 
 ```python
+from pathlib import Path
 from databricks_schema import CatalogExtractor, catalog_to_yaml, schema_from_yaml
+from databricks_schema import diff_catalog_with_dir, diff_schemas
 
 # Extract using configured auth
 extractor = CatalogExtractor()
@@ -150,6 +182,17 @@ yaml_text = catalog_to_yaml(catalog)
 # Deserialise from YAML
 schema = schema_from_yaml(open("schemas/main.yaml").read())
 print(schema.tables[0].columns)
+
+# Compare live catalog against local YAML files
+result = diff_catalog_with_dir(catalog, Path("./schemas/"))
+if result.has_changes:
+    for schema_diff in result.schemas:
+        print(schema_diff.name, schema_diff.status)
+
+# Compare two Schema objects directly
+stored = schema_from_yaml(open("schemas/main.yaml").read())
+live = extractor._extract_schema("my_catalog", ...)
+diff = diff_schemas(live=live, stored=stored)
 ```
 
 ## Development
