@@ -33,19 +33,19 @@ class Table(BaseModel):
     comment: str | None = None
     owner: str | None = None
     created_at: datetime | None = None
+    tags: dict[str, str] = Field(default_factory=dict)
+    storage_location: str | None = None
     columns: list[Column] = Field(default_factory=list)
     primary_key: PrimaryKey | None = None
     foreign_keys: list[ForeignKey] = Field(default_factory=list)
-    tags: dict[str, str] = Field(default_factory=dict)
-    storage_location: str | None = None
 
 
 class Schema(BaseModel):
     name: str
     comment: str | None = None
     owner: str | None = None
-    tables: list[Table] = Field(default_factory=list)
     tags: dict[str, str] = Field(default_factory=dict)
+    tables: list[Table] = Field(default_factory=list)
 
 
 class Catalog(BaseModel):
