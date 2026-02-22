@@ -13,6 +13,15 @@ class CatalogExtractor:
     def __init__(self, client: WorkspaceClient | None = None) -> None:
         self.client = client or WorkspaceClient()
 
+    def _fetch_tags(self, entity_type: str, entity_name: str) -> dict[str, str]:
+        tags: dict[str, str] = {}
+        for assignment in self.client.entity_tag_assignments.list(entity_type, entity_name):
+            key = getattr(assignment, "tag_key", None)
+            value = getattr(assignment, "tag_value", None)
+            if key is not None:
+                tags[key] = value or ""
+        return tags
+
     def extract_catalog(
         self,
         catalog_name: str,
@@ -21,8 +30,7 @@ class CatalogExtractor:
         include_storage_location: bool = False,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
-        raw_tags = getattr(sdk_catalog, "tags", None) or {}
-        catalog_tags = dict(raw_tags)
+        catalog_tags = self._fetch_tags("catalogs", catalog_name)
 
         schemas: list[Schema] = []
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
@@ -44,8 +52,7 @@ class CatalogExtractor:
         self, catalog_name: str, sdk_schema, include_storage_location: bool = False
     ) -> Schema:
         schema_name = sdk_schema.name or ""
-        raw_tags = getattr(sdk_schema, "tags", None) or {}
-        schema_tags = dict(raw_tags)
+        schema_tags = self._fetch_tags("schemas", f"{catalog_name}.{schema_name}")
 
         tables: list[Table] = []
         for sdk_table_summary in self.client.tables.list(
@@ -74,8 +81,7 @@ class CatalogExtractor:
         include_storage_location: bool = False,
     ) -> Table:
         sdk_table = self.client.tables.get(full_name)
-        raw_tags = getattr(sdk_table, "tags", None) or {}
-        table_tags = dict(raw_tags)
+        table_tags = self._fetch_tags("tables", full_name)
 
         # Build columns sorted by position
         sdk_columns = list(getattr(sdk_table, "columns", None) or [])
@@ -93,7 +99,7 @@ class CatalogExtractor:
             else:
                 data_type = "UNKNOWN"
 
-            col_tags = dict(getattr(sdk_col, "tags", None) or {})
+            col_tags = self._fetch_tags("columns", f"{full_name}.{sdk_col.name or ''}")
             columns.append(
                 Column(
                     name=sdk_col.name or "",
