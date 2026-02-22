@@ -1,4 +1,7 @@
+from datetime import UTC
+
 import pytest
+from databricks.sdk.service.catalog import TableType
 from pydantic import ValidationError
 
 from databricks_schema.models import (
@@ -8,7 +11,6 @@ from databricks_schema.models import (
     PrimaryKey,
     Schema,
     Table,
-    TableType,
 )
 
 
@@ -35,11 +37,11 @@ class TestColumn:
 
 class TestTableType:
     def test_enum_values(self):
-        assert TableType.MANAGED == "MANAGED"
-        assert TableType.EXTERNAL == "EXTERNAL"
-        assert TableType.VIEW == "VIEW"
-        assert TableType.MATERIALIZED_VIEW == "MATERIALIZED_VIEW"
-        assert TableType.STREAMING_TABLE == "STREAMING_TABLE"
+        assert TableType.MANAGED.value == "MANAGED"
+        assert TableType.EXTERNAL.value == "EXTERNAL"
+        assert TableType.VIEW.value == "VIEW"
+        assert TableType.MATERIALIZED_VIEW.value == "MATERIALIZED_VIEW"
+        assert TableType.STREAMING_TABLE.value == "STREAMING_TABLE"
 
     def test_from_string(self):
         assert TableType("VIEW") is TableType.VIEW
@@ -82,10 +84,20 @@ class TestTable:
         assert t.primary_key is None
         assert t.tags == {}
         assert t.storage_location is None
+        assert t.owner is None
+        assert t.created_at is None
 
     def test_with_type(self):
         t = Table(name="v", table_type=TableType.VIEW)
         assert t.table_type is TableType.VIEW
+
+    def test_owner_and_created_at(self):
+        from datetime import datetime
+
+        ts = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+        t = Table(name="t", owner="alice", created_at=ts)
+        assert t.owner == "alice"
+        assert t.created_at == ts
 
 
 class TestSchema:

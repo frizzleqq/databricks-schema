@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from databricks.sdk import WorkspaceClient
 
-from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table, TableType
+from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 
 _SYSTEM_SCHEMAS = {"information_schema"}
 
@@ -142,21 +144,21 @@ class CatalogExtractor:
                     )
                 )
 
-        # Determine table_type
-        raw_type = getattr(sdk_table, "table_type", None)
-        table_type: TableType | None = None
-        if raw_type is not None:
-            type_val = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
-            try:
-                table_type = TableType(type_val)
-            except ValueError:
-                table_type = None
+        # created_at is a Unix timestamp in milliseconds
+        created_at_ms = getattr(sdk_table, "created_at", None)
+        created_at = (
+            datetime.fromtimestamp(created_at_ms / 1000, tz=UTC)
+            if created_at_ms is not None
+            else None
+        )
 
         table_name = full_name.split(".")[-1]
         return Table(
             name=table_name,
-            table_type=table_type,
+            table_type=getattr(sdk_table, "table_type", None),
             comment=getattr(sdk_table, "comment", None),
+            owner=getattr(sdk_table, "owner", None),
+            created_at=created_at,
             columns=columns,
             primary_key=primary_key,
             foreign_keys=foreign_keys,

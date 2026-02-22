@@ -1,5 +1,7 @@
+from databricks.sdk.service.catalog import TableType
+
 from .extractor import CatalogExtractor
-from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table, TableType
+from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 from .yaml_io import (
     catalog_from_yaml,
     catalog_to_yaml,

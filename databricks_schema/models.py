@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from datetime import datetime
 
+from databricks.sdk.service.catalog import TableType
 from pydantic import BaseModel, Field
-
-
-class TableType(StrEnum):
-    MANAGED = "MANAGED"
-    EXTERNAL = "EXTERNAL"
-    VIEW = "VIEW"
-    MATERIALIZED_VIEW = "MATERIALIZED_VIEW"
-    STREAMING_TABLE = "STREAMING_TABLE"
 
 
 class Column(BaseModel):
@@ -38,6 +31,8 @@ class Table(BaseModel):
     name: str
     table_type: TableType | None = None
     comment: str | None = None
+    owner: str | None = None
+    created_at: datetime | None = None
     columns: list[Column] = Field(default_factory=list)
     primary_key: PrimaryKey | None = None
     foreign_keys: list[ForeignKey] = Field(default_factory=list)

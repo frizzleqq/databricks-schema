@@ -1,7 +1,9 @@
+from datetime import UTC
 from unittest.mock import MagicMock
 
+from databricks.sdk.service.catalog import TableType
+
 from databricks_schema.extractor import CatalogExtractor
-from databricks_schema.models import TableType
 
 
 def _make_col(name, position, type_text=None, type_name=None, nullable=True, comment=None):
@@ -22,7 +24,15 @@ def _make_table_summary(name):
     return ts
 
 
-def _make_sdk_table(name, table_type_val=None, columns=None, constraints=None, comment=None):
+def _make_sdk_table(
+    name,
+    table_type_val=None,
+    columns=None,
+    constraints=None,
+    comment=None,
+    owner=None,
+    created_at=None,
+):
     t = MagicMock()
     t.name = name
     t.comment = comment
@@ -30,12 +40,9 @@ def _make_sdk_table(name, table_type_val=None, columns=None, constraints=None, c
     t.storage_location = None
     t.columns = columns or []
     t.table_constraints = constraints or []
-    if table_type_val:
-        tt = MagicMock()
-        tt.value = table_type_val
-        t.table_type = tt
-    else:
-        t.table_type = None
+    t.owner = owner
+    t.created_at = created_at
+    t.table_type = TableType(table_type_val) if table_type_val else None
     return t
 
 
@@ -205,6 +212,32 @@ class TestCatalogExtractor:
         assert fk.ref_table == "accounts"
         assert fk.ref_columns == ["id"]
         assert fk.columns == ["user_id"]
+
+    def test_owner_and_created_at_extracted(self):
+
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        sdk_catalog.tags = {}
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.tags = {}
+        client.schemas.list.return_value = [s]
+        client.tables.list.return_value = [_make_table_summary("t")]
+
+        created_at_ms = 1_700_000_000_000  # milliseconds
+        sdk_table = _make_sdk_table("t", owner="alice", created_at=created_at_ms)
+        client.tables.get.return_value = sdk_table
+
+        catalog = extractor.extract_catalog("mycat")
+        table = catalog.schemas[0].tables[0]
+        assert table.owner == "alice"
+        assert table.created_at is not None
+        assert table.created_at.tzinfo == UTC
+        assert int(table.created_at.timestamp() * 1000) == created_at_ms
 
     def test_table_type_extracted(self):
         extractor, client = self._extractor()
