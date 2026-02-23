@@ -57,17 +57,24 @@ def extract(
     print(f"Extracting catalog '{catalog}'...", file=sys.stderr)
 
     if output_dir is None:
+        schema_filter_set = set(schema) if schema else None
+        matching_schemas = [
+            s.name
+            for s in client.schemas.list(catalog_name=catalog)
+            if (include_system or (s.name or "") not in {"information_schema"})
+            and (schema_filter_set is None or (s.name or "") in schema_filter_set)
+        ]
+        if len(matching_schemas) != 1:
+            typer.echo(
+                "Error: --output-dir is required when extracting multiple schemas.", err=True
+            )
+            raise typer.Exit(code=1)
         catalog_obj = extractor.extract_catalog(
             catalog_name=catalog,
             schema_filter=list(schema) if schema else None,
             skip_system_schemas=not include_system,
             include_storage_location=storage_location,
         )
-        if len(catalog_obj.schemas) != 1:
-            typer.echo(
-                "Error: --output-dir is required when extracting multiple schemas.", err=True
-            )
-            raise typer.Exit(code=1)
         print(schema_to_yaml(catalog_obj.schemas[0]))
         return
 
