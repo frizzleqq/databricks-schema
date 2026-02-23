@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Iterator
 
 from databricks.sdk import WorkspaceClient
 
@@ -49,7 +49,9 @@ class CatalogExtractor:
         catalog_tags = self._fetch_tags("catalogs", catalog_name)
 
         schemas = list(
-            self.iter_schemas(catalog_name, schema_filter, skip_system_schemas, include_storage_location)
+            self.iter_schemas(
+                catalog_name, schema_filter, skip_system_schemas, include_storage_location
+            )
         )
 
         return Catalog(
