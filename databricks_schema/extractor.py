@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Iterator
 
 from databricks.sdk import WorkspaceClient
 
@@ -22,6 +23,21 @@ class CatalogExtractor:
                 tags[key] = value or ""
         return tags
 
+    def iter_schemas(
+        self,
+        catalog_name: str,
+        schema_filter: list[str] | None = None,
+        skip_system_schemas: bool = True,
+        include_storage_location: bool = False,
+    ) -> Iterator[Schema]:
+        for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
+            schema_name = sdk_schema.name or ""
+            if skip_system_schemas and schema_name in _SYSTEM_SCHEMAS:
+                continue
+            if schema_filter and schema_name not in schema_filter:
+                continue
+            yield self._extract_schema(catalog_name, sdk_schema, include_storage_location)
+
     def extract_catalog(
         self,
         catalog_name: str,
@@ -32,14 +48,9 @@ class CatalogExtractor:
         sdk_catalog = self.client.catalogs.get(catalog_name)
         catalog_tags = self._fetch_tags("catalogs", catalog_name)
 
-        schemas: list[Schema] = []
-        for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
-            schema_name = sdk_schema.name or ""
-            if skip_system_schemas and schema_name in _SYSTEM_SCHEMAS:
-                continue
-            if schema_filter and schema_name not in schema_filter:
-                continue
-            schemas.append(self._extract_schema(catalog_name, sdk_schema, include_storage_location))
+        schemas = list(
+            self.iter_schemas(catalog_name, schema_filter, skip_system_schemas, include_storage_location)
+        )
 
         return Catalog(
             name=catalog_name,

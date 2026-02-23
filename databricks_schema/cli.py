@@ -55,14 +55,14 @@ def extract(
     extractor = CatalogExtractor(client=client)
 
     print(f"Extracting catalog '{catalog}'...", file=sys.stderr)
-    catalog_obj = extractor.extract_catalog(
-        catalog_name=catalog,
-        schema_filter=list(schema) if schema else None,
-        skip_system_schemas=not include_system,
-        include_storage_location=storage_location,
-    )
 
     if output_dir is None:
+        catalog_obj = extractor.extract_catalog(
+            catalog_name=catalog,
+            schema_filter=list(schema) if schema else None,
+            skip_system_schemas=not include_system,
+            include_storage_location=storage_location,
+        )
         if len(catalog_obj.schemas) != 1:
             typer.echo(
                 "Error: --output-dir is required when extracting multiple schemas.", err=True
@@ -72,12 +72,19 @@ def extract(
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    for s in catalog_obj.schemas:
+    count = 0
+    for s in extractor.iter_schemas(
+        catalog_name=catalog,
+        schema_filter=list(schema) if schema else None,
+        skip_system_schemas=not include_system,
+        include_storage_location=storage_location,
+    ):
         out_file = output_dir / f"{s.name}.yaml"
         out_file.write_text(schema_to_yaml(s), encoding="utf-8")
         print(f"  Wrote {out_file}", file=sys.stderr)
+        count += 1
 
-    print(f"Done — {len(catalog_obj.schemas)} schema(s) written to {output_dir}", file=sys.stderr)
+    print(f"Done — {count} schema(s) written to {output_dir}", file=sys.stderr)
 
 
 @app.command()
