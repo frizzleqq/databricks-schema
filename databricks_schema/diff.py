@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .models import Catalog, Column, Schema, Table
-from .yaml_io import schema_from_yaml
+from databricks_schema.models import Catalog, Column, Schema, Table
+from databricks_schema.yaml_io import schema_from_yaml
 
 
 @dataclass

@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from .models import Catalog, Schema
+from databricks_schema.models import Catalog, Schema
 
 
 def _strip_empty(obj: Any) -> Any:

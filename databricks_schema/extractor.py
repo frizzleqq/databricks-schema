@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from databricks.sdk import WorkspaceClient
 
-from .models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
+from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 
 _SYSTEM_SCHEMAS = {"information_schema"}
 

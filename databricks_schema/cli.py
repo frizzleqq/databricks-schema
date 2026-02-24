@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import typer
+from databricks.sdk import WorkspaceClient
 
-if TYPE_CHECKING:
-    from .diff import CatalogDiff
+from databricks_schema.diff import CatalogDiff, diff_catalog_with_dir
+from databricks_schema.extractor import CatalogExtractor
+from databricks_schema.yaml_io import schema_to_yaml
 
 app = typer.Typer(name="databricks-schema", no_args_is_help=True)
 
 
 def _make_client(host: str | None, token: str | None):
-    from databricks.sdk import WorkspaceClient
-
     kwargs = {}
     if host:
         kwargs["host"] = host
@@ -48,9 +48,6 @@ def extract(
     ] = None,
 ) -> None:
     """Extract Unity Catalog schemas to YAML files."""
-    from .extractor import CatalogExtractor
-    from .yaml_io import schema_to_yaml
-
     client = _make_client(host, token)
     extractor = CatalogExtractor(client=client)
 
@@ -113,9 +110,6 @@ def diff(
 
     Exits with code 1 if differences are found (useful in CI).
     """
-    from .diff import diff_catalog_with_dir
-    from .extractor import CatalogExtractor
-
     if not schema_dir.is_dir():
         typer.echo(f"Error: {schema_dir} is not a directory.", err=True)
         raise typer.Exit(code=2)
