@@ -37,6 +37,8 @@ tests/
 - Ruff: select E, W, F, I, UP; line-length 100; target py311
 - Use `X | None` not `Optional[X]`; use `datetime.UTC` not `timezone.utc`
 - `from __future__ import annotations` in every module
+- Imports at the top of each module — never inside functions
+- Use full package imports (`from databricks_schema.models import ...`), not relative imports (`from .models import ...`)
 - Tags = Unity Catalog governance key/value tags — not `properties`
 - FK refs store only `ref_schema` + `ref_table` (no catalog)
 - Column order in YAML = SDK position (None → 9999)
