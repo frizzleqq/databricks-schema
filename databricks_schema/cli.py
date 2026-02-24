@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -10,6 +11,11 @@ from databricks.sdk import WorkspaceClient
 from databricks_schema.diff import CatalogDiff, diff_catalog_with_dir
 from databricks_schema.extractor import CatalogExtractor
 from databricks_schema.yaml_io import schema_to_yaml
+
+_handler = logging.StreamHandler(sys.stderr)
+_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+logging.getLogger("databricks_schema").addHandler(_handler)
+logging.getLogger("databricks_schema").setLevel(logging.DEBUG)
 
 app = typer.Typer(name="databricks-schema", no_args_is_help=True)
 

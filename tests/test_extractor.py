@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC
 from unittest.mock import MagicMock
 
+from databricks.sdk.errors import NotFound
 from databricks.sdk.service.catalog import TableType
 
 from databricks_schema.extractor import CatalogExtractor
@@ -346,3 +348,28 @@ class TestCatalogExtractor:
 
         catalog = extractor.extract_catalog("mycat")
         assert catalog.schemas[0].tables[0].columns[0].tags == {"sensitivity": "high"}
+
+    def test_fetch_tags_not_found_logs_error_and_continues(self, caplog):
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+        client.tables.list.return_value = [_make_table_summary("orders")]
+
+        col = _make_col("order_id", position=1, type_text="BIGINT")
+        sdk_table = _make_sdk_table("orders", columns=[col])
+        client.tables.get.return_value = sdk_table
+
+        client.entity_tag_assignments.list.side_effect = NotFound("column not found")
+
+        with caplog.at_level(logging.ERROR, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat")
+
+        assert catalog.schemas[0].tables[0].columns[0].tags == {}
+        assert any("Not found" in r.message for r in caplog.records)

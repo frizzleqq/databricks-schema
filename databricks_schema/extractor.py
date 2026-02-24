@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
 
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_SCHEMAS = {"information_schema"}
 
@@ -16,11 +20,14 @@ class CatalogExtractor:
 
     def _fetch_tags(self, entity_type: str, entity_name: str) -> dict[str, str]:
         tags: dict[str, str] = {}
-        for assignment in self.client.entity_tag_assignments.list(entity_type, entity_name):
-            key = getattr(assignment, "tag_key", None)
-            value = getattr(assignment, "tag_value", None)
-            if key is not None:
-                tags[key] = value or ""
+        try:
+            for assignment in self.client.entity_tag_assignments.list(entity_type, entity_name):
+                key = getattr(assignment, "tag_key", None)
+                value = getattr(assignment, "tag_value", None)
+                if key is not None:
+                    tags[key] = value or ""
+        except NotFound:
+            logger.error("Not found when fetching tags for %s '%s'", entity_type, entity_name)
         return tags
 
     def iter_schemas(
