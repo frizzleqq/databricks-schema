@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from databricks_schema.models import Catalog, Column, Schema, Table
-from databricks_schema.yaml_io import schema_from_yaml
+from databricks_schema.yaml_io import schema_from_json, schema_from_yaml
 
 
 @dataclass
@@ -128,25 +128,29 @@ def diff_catalog_with_dir(
     schema_dir: Path,
     ignore_added: frozenset[str] = frozenset({"default"}),
     schema_names: frozenset[str] | None = None,
+    fmt: Literal["yaml", "json"] = "yaml",
 ) -> CatalogDiff:
-    """Compare a Catalog against YAML files in schema_dir.
+    """Compare a Catalog against schema files in schema_dir.
 
-    For each .yaml file in schema_dir (limited to schema_names if provided):
+    For each file in schema_dir (limited to schema_names if provided):
       - If the schema exists in the catalog: compare them.
       - If the schema is missing from the catalog: report as removed.
 
-    For each schema in the catalog without a .yaml file: report as added,
+    For each schema in the catalog without a file: report as added,
     unless its name is in ignore_added (default: {"default"}).
 
-    schema_names: if set, only YAML files whose stem is in this set are loaded.
+    schema_names: if set, only files whose stem is in this set are loaded.
                   Use this when comparing a subset of schemas to avoid reporting
                   unrelated schemas as removed.
+    fmt: file format to read ("yaml" or "json").
     """
+    ext = ".json" if fmt == "json" else ".yaml"
+    loader = schema_from_json if fmt == "json" else schema_from_yaml
     stored: dict[str, Schema] = {}
-    for yaml_file in sorted(schema_dir.glob("*.yaml")):
-        if schema_names is not None and yaml_file.stem not in schema_names:
+    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
+        if schema_names is not None and schema_file.stem not in schema_names:
             continue
-        schema = schema_from_yaml(yaml_file.read_text(encoding="utf-8"))
+        schema = loader(schema_file.read_text(encoding="utf-8"))
         stored[schema.name] = schema
 
     live = {s.name: s for s in catalog.schemas}

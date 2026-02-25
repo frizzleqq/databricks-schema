@@ -10,7 +10,7 @@ from databricks.sdk import WorkspaceClient
 
 from databricks_schema.diff import CatalogDiff, diff_catalog_with_dir
 from databricks_schema.extractor import CatalogExtractor
-from databricks_schema.yaml_io import schema_to_yaml
+from databricks_schema.yaml_io import schema_to_json, schema_to_yaml
 
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
@@ -41,9 +41,12 @@ def _add_connection_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    """Extract Unity Catalog schemas to YAML files."""
+    """Extract Unity Catalog schemas to YAML or JSON files."""
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
+
+    serializer = schema_to_json if args.fmt == "json" else schema_to_yaml
+    ext = ".json" if args.fmt == "json" else ".yaml"
 
     print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
@@ -67,7 +70,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             include_storage_location=args.storage_location,
             include_tags=not args.no_tags,
         )
-        print(schema_to_yaml(catalog_obj.schemas[0]))
+        print(serializer(catalog_obj.schemas[0]))
         return
 
     output_dir: Path = args.output_dir
@@ -79,8 +82,8 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         include_storage_location=args.storage_location,
         include_tags=not args.no_tags,
     ):
-        out_file = output_dir / f"{s.name}.yaml"
-        out_file.write_text(schema_to_yaml(s), encoding="utf-8")
+        out_file = output_dir / f"{s.name}{ext}"
+        out_file.write_text(serializer(s), encoding="utf-8")
         print(f"  Wrote {out_file}", file=sys.stderr)
         count += 1
 
@@ -88,16 +91,21 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 
 
 def _cmd_diff(args: argparse.Namespace) -> None:
-    """Compare Unity Catalog schemas against local YAML files."""
+    """Compare Unity Catalog schemas against local YAML or JSON files."""
     schema_dir: Path = args.schema_dir
     if not schema_dir.is_dir():
         print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
         sys.exit(2)
 
     yaml_files = list(schema_dir.glob("*.yaml"))
-    if not yaml_files:
-        print(f"No YAML files found in {schema_dir}.", file=sys.stderr)
+    json_files = list(schema_dir.glob("*.json"))
+    if yaml_files and json_files:
+        print("Error: mixed YAML and JSON files in schema directory.", file=sys.stderr)
         sys.exit(2)
+    elif not yaml_files and not json_files:
+        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
+    fmt = "json" if json_files else "yaml"
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
@@ -112,6 +120,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
         catalog_obj,
         schema_dir,
         schema_names=frozenset(args.schema) if args.schema else None,
+        fmt=fmt,
     )
 
     if not result.has_changes:
@@ -193,6 +202,14 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="no_tags",
         help="Skip tag lookups (faster, omits tags from output)",
+    )
+    extract_p.add_argument(
+        "--format",
+        "-f",
+        choices=["yaml", "json"],
+        default="yaml",
+        dest="fmt",
+        help="Output format (default: yaml)",
     )
     extract_p.add_argument(
         "--workers",
