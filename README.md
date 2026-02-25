@@ -72,12 +72,6 @@ Include system schemas (`information_schema`):
 databricks-schema extract <catalog> --output-dir ./schemas/ --include-system
 ```
 
-Include `storage_location` in the output:
-
-```bash
-databricks-schema extract <catalog> --output-dir ./schemas/ --storage-location
-```
-
 Skip tag lookups for faster extraction (tags will be absent from output):
 
 ```bash
