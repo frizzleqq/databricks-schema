@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import yaml
@@ -52,3 +53,23 @@ def catalog_to_yaml(catalog: Catalog) -> str:
 def catalog_from_yaml(text: str) -> Catalog:
     data = yaml.safe_load(text)
     return Catalog.model_validate(data)
+
+
+def _to_json(data: dict) -> str:
+    return json.dumps(_strip_empty(data), indent=2, ensure_ascii=False)
+
+
+def schema_to_json(schema: Schema) -> str:
+    return _to_json(schema.model_dump(mode="json"))
+
+
+def schema_from_json(text: str) -> Schema:
+    return Schema.model_validate(json.loads(text))
+
+
+def catalog_to_json(catalog: Catalog) -> str:
+    return _to_json(catalog.model_dump(mode="json"))
+
+
+def catalog_from_json(text: str) -> Catalog:
+    return Catalog.model_validate(json.loads(text))

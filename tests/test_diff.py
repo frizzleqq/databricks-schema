@@ -7,7 +7,7 @@ from databricks_schema.diff import (
     diff_schemas,
 )
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
-from databricks_schema.yaml_io import schema_to_yaml
+from databricks_schema.yaml_io import schema_to_json, schema_to_yaml
 
 
 def _schema(name="main", comment=None, owner=None, tables=None, tags=None):
@@ -232,3 +232,11 @@ class TestDiffCatalogWithDir:
         result = diff_catalog_with_dir(catalog, tmp_path)
         assert result.schemas == []
         assert not result.has_changes
+
+    def test_no_changes_json(self, tmp_path: Path):
+        schema = _schema("main", tables=[_table("users", columns=[_col("id")])])
+        (tmp_path / "main.json").write_text(schema_to_json(schema))
+        catalog = Catalog(name="prod", schemas=[schema])
+        result = diff_catalog_with_dir(catalog, tmp_path, fmt="json")
+        assert not result.has_changes
+        assert result.schemas[0].status == "unchanged"

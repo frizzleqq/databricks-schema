@@ -1,3 +1,5 @@
+import json
+
 import yaml
 
 from databricks_schema.models import (
@@ -10,9 +12,13 @@ from databricks_schema.models import (
     TableType,
 )
 from databricks_schema.yaml_io import (
+    catalog_from_json,
     catalog_from_yaml,
+    catalog_to_json,
     catalog_to_yaml,
+    schema_from_json,
     schema_from_yaml,
+    schema_to_json,
     schema_to_yaml,
 )
 
@@ -119,4 +125,69 @@ class TestCatalogYamlRoundTrip:
         cat = Catalog(name="x")
         text = catalog_to_yaml(cat)
         data = yaml.safe_load(text)
+        assert "comment" not in data
+
+
+class TestSchemaJsonRoundTrip:
+    def test_round_trip(self):
+        original = _make_catalog().schemas[0]
+        text = schema_to_json(original)
+        restored = schema_from_json(text)
+        assert restored.name == original.name
+        assert restored.comment == original.comment
+        assert len(restored.tables) == 1
+        t = restored.tables[0]
+        assert t.name == "users"
+        assert t.table_type == TableType.MANAGED
+        assert len(t.columns) == 2
+
+    def test_nullable_false_preserved(self):
+        original = _make_catalog().schemas[0]
+        text = schema_to_json(original)
+        restored = schema_from_json(text)
+        id_col = restored.tables[0].columns[0]
+        assert id_col.name == "id"
+        assert id_col.nullable is False
+
+    def test_none_fields_absent_from_json(self):
+        schema = Schema(name="empty")
+        text = schema_to_json(schema)
+        data = json.loads(text)
+        assert "comment" not in data
+        assert "tags" not in data
+        assert "tables" not in data
+
+
+class TestCatalogJsonRoundTrip:
+    def test_round_trip(self):
+        original = _make_catalog()
+        text = catalog_to_json(original)
+        restored = catalog_from_json(text)
+        assert restored.name == "prod"
+        assert len(restored.schemas) == 1
+        assert restored.schemas[0].name == "main"
+
+    def test_tags_preserved(self):
+        original = _make_catalog()
+        text = catalog_to_json(original)
+        restored = catalog_from_json(text)
+        assert restored.schemas[0].tags == {"env": "prod"}
+        assert restored.schemas[0].tables[0].tags == {"domain": "identity"}
+
+    def test_pk_fk_preserved(self):
+        original = _make_catalog()
+        text = catalog_to_json(original)
+        restored = catalog_from_json(text)
+        table = restored.schemas[0].tables[0]
+        assert table.primary_key is not None
+        assert table.primary_key.columns == ["id"]
+        assert len(table.foreign_keys) == 1
+        fk = table.foreign_keys[0]
+        assert fk.ref_schema == "orgs"
+        assert fk.ref_table == "organizations"
+
+    def test_none_catalog_comment_absent(self):
+        cat = Catalog(name="x")
+        text = catalog_to_json(cat)
+        data = json.loads(text)
         assert "comment" not in data

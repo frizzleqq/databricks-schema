@@ -7,7 +7,7 @@ A CLI tool and Python library for extracting and diffing Databricks Unity Catalo
 - Extracts catalog → schemas → tables → columns (with types, comments, nullability, owner, created_at)
 - Captures primary keys, foreign keys, and Unity Catalog governance tags
 - Outputs one YAML file per schema for easy diffing and version control
-- Compares live catalog state against local YAML files (`diff` command)
+- Compares live catalog state against local YAML or JSON files (`diff` command, format auto-detected)
 - Parallel table extraction (configurable worker count) for fast extraction of large catalogs
 - Pydantic v2 models as the intermediate representation (ready for bidirectional sync)
 
@@ -54,6 +54,8 @@ Extract all schemas from a catalog to YAML files:
 databricks-schema extract <catalog> --output-dir ./schemas/
 ```
 
+Use `--format json` to write `.json` files instead of `.yaml`.
+
 Extract specific schemas only:
 
 ```bash
@@ -80,7 +82,7 @@ databricks-schema extract <catalog> --output-dir ./schemas/ --workers 8
 
 ### `diff`
 
-Compare the live catalog against previously extracted YAML files:
+Compare the live catalog against previously extracted schema files (format auto-detected from the directory — YAML or JSON, not mixed):
 
 ```bash
 databricks-schema diff <catalog> ./schemas/
@@ -129,9 +131,9 @@ List schemas in a catalog:
 databricks-schema list-schemas <catalog>
 ```
 
-## YAML Output Format
+## Output Format
 
-Each schema is written to `{output-dir}/{schema-name}.yaml`. Example:
+Each schema is written to `{output-dir}/{schema-name}.yaml`. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
 
 ```yaml
 name: main
@@ -166,8 +168,6 @@ tables:
         ref_columns:
           - id
 ```
-
-Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted from the YAML output.
 
 ## Python Library Usage
 
