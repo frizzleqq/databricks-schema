@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Annotated
 
-import typer
 from databricks.sdk import WorkspaceClient
 
 from databricks_schema.diff import CatalogDiff, diff_catalog_with_dir
@@ -17,10 +17,8 @@ _handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logging.getLogger("databricks_schema").addHandler(_handler)
 logging.getLogger("databricks_schema").setLevel(logging.DEBUG)
 
-app = typer.Typer(name="databricks-schema", no_args_is_help=True)
 
-
-def _make_client(host: str | None, token: str | None):
+def _make_client(host: str | None, token: str | None) -> WorkspaceClient:
     kwargs = {}
     if host:
         kwargs["host"] = host
@@ -29,65 +27,57 @@ def _make_client(host: str | None, token: str | None):
     return WorkspaceClient(**kwargs)
 
 
-@app.command()
-def extract(
-    catalog: Annotated[str, typer.Argument(help="Catalog name")],
-    schema: Annotated[
-        list[str] | None, typer.Option("--schema", "-s", help="Schema filter (repeatable)")
-    ] = None,
-    output_dir: Annotated[
-        Path | None,
-        typer.Option("--output-dir", "-o", help="Output directory for per-schema YAML files"),
-    ] = None,
-    include_system: Annotated[
-        bool, typer.Option("--include-system", help="Include system schemas (information_schema)")
-    ] = False,
-    storage_location: Annotated[
-        bool, typer.Option("--storage-location", help="Include storage_location in output")
-    ] = False,
-    host: Annotated[
-        str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
-    ] = None,
-    token: Annotated[
-        str | None,
-        typer.Option("--token", envvar="DATABRICKS_TOKEN", help="Databricks access token"),
-    ] = None,
-) -> None:
+def _add_connection_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("DATABRICKS_HOST"),
+        help="Databricks host URL",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("DATABRICKS_TOKEN"),
+        help="Databricks access token",
+    )
+
+
+def _cmd_extract(args: argparse.Namespace) -> None:
     """Extract Unity Catalog schemas to YAML files."""
-    client = _make_client(host, token)
+    client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client)
 
-    print(f"Extracting catalog '{catalog}'...", file=sys.stderr)
+    print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
-    if output_dir is None:
-        schema_filter_set = set(schema) if schema else None
+    if args.output_dir is None:
+        schema_filter_set = set(args.schema) if args.schema else None
         matching_schemas = [
             s.name
-            for s in client.schemas.list(catalog_name=catalog)
-            if (include_system or (s.name or "") not in {"information_schema"})
+            for s in client.schemas.list(catalog_name=args.catalog)
+            if (args.include_system or (s.name or "") not in {"information_schema"})
             and (schema_filter_set is None or (s.name or "") in schema_filter_set)
         ]
         if len(matching_schemas) != 1:
-            typer.echo(
-                "Error: --output-dir is required when extracting multiple schemas.", err=True
+            print(
+                "Error: --output-dir is required when extracting multiple schemas.",
+                file=sys.stderr,
             )
-            raise typer.Exit(code=1)
+            sys.exit(1)
         catalog_obj = extractor.extract_catalog(
-            catalog_name=catalog,
-            schema_filter=list(schema) if schema else None,
-            skip_system_schemas=not include_system,
-            include_storage_location=storage_location,
+            catalog_name=args.catalog,
+            schema_filter=args.schema,
+            skip_system_schemas=not args.include_system,
+            include_storage_location=args.storage_location,
         )
         print(schema_to_yaml(catalog_obj.schemas[0]))
         return
 
+    output_dir: Path = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     for s in extractor.iter_schemas(
-        catalog_name=catalog,
-        schema_filter=list(schema) if schema else None,
-        skip_system_schemas=not include_system,
-        include_storage_location=storage_location,
+        catalog_name=args.catalog,
+        schema_filter=args.schema,
+        skip_system_schemas=not args.include_system,
+        include_storage_location=args.storage_location,
     ):
         out_file = output_dir / f"{s.name}.yaml"
         out_file.write_text(schema_to_yaml(s), encoding="utf-8")
@@ -97,46 +87,30 @@ def extract(
     print(f"Done — {count} schema(s) written to {output_dir}", file=sys.stderr)
 
 
-@app.command()
-def diff(
-    catalog: Annotated[str, typer.Argument(help="Catalog name")],
-    schema_dir: Annotated[Path, typer.Argument(help="Directory containing per-schema YAML files")],
-    schema: Annotated[
-        list[str] | None, typer.Option("--schema", "-s", help="Schema filter (repeatable)")
-    ] = None,
-    host: Annotated[
-        str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
-    ] = None,
-    token: Annotated[
-        str | None,
-        typer.Option("--token", envvar="DATABRICKS_TOKEN", help="Databricks access token"),
-    ] = None,
-) -> None:
-    """Compare Unity Catalog schemas against local YAML files.
-
-    Exits with code 1 if differences are found (useful in CI).
-    """
+def _cmd_diff(args: argparse.Namespace) -> None:
+    """Compare Unity Catalog schemas against local YAML files."""
+    schema_dir: Path = args.schema_dir
     if not schema_dir.is_dir():
-        typer.echo(f"Error: {schema_dir} is not a directory.", err=True)
-        raise typer.Exit(code=2)
+        print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
+        sys.exit(2)
 
     yaml_files = list(schema_dir.glob("*.yaml"))
     if not yaml_files:
-        typer.echo(f"No YAML files found in {schema_dir}.", err=True)
-        raise typer.Exit(code=2)
+        print(f"No YAML files found in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
 
-    client = _make_client(host, token)
+    client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client)
-    print(f"Comparing catalog '{catalog}' against {schema_dir}...", file=sys.stderr)
+    print(f"Comparing catalog '{args.catalog}' against {schema_dir}...", file=sys.stderr)
     catalog_obj = extractor.extract_catalog(
-        catalog_name=catalog,
-        schema_filter=list(schema) if schema else None,
+        catalog_name=args.catalog,
+        schema_filter=args.schema,
     )
 
     result = diff_catalog_with_dir(
         catalog_obj,
         schema_dir,
-        schema_names=frozenset(schema) if schema else None,
+        schema_names=frozenset(args.schema) if args.schema else None,
     )
 
     if not result.has_changes:
@@ -144,7 +118,7 @@ def diff(
         return
 
     _print_diff(result)
-    raise typer.Exit(code=1)
+    sys.exit(1)
 
 
 def _print_diff(result: CatalogDiff) -> None:
@@ -165,34 +139,97 @@ def _print_diff(result: CatalogDiff) -> None:
                     print(f"        {fc.field}: {fc.old!r} -> {fc.new!r}")
 
 
-@app.command("list-catalogs")
-def list_catalogs(
-    host: Annotated[
-        str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
-    ] = None,
-    token: Annotated[
-        str | None,
-        typer.Option("--token", envvar="DATABRICKS_TOKEN", help="Databricks access token"),
-    ] = None,
-) -> None:
+def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
-    client = _make_client(host, token)
+    client = _make_client(args.host, args.token)
     for c in client.catalogs.list():
         print(c.name)
 
 
-@app.command("list-schemas")
-def list_schemas(
-    catalog: Annotated[str, typer.Argument(help="Catalog name")],
-    host: Annotated[
-        str | None, typer.Option("--host", envvar="DATABRICKS_HOST", help="Databricks host URL")
-    ] = None,
-    token: Annotated[
-        str | None,
-        typer.Option("--token", envvar="DATABRICKS_TOKEN", help="Databricks access token"),
-    ] = None,
-) -> None:
+def _cmd_list_schemas(args: argparse.Namespace) -> None:
     """List schemas in a catalog."""
-    client = _make_client(host, token)
-    for s in client.schemas.list(catalog_name=catalog):
+    client = _make_client(args.host, args.token)
+    for s in client.schemas.list(catalog_name=args.catalog):
         print(s.name)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="databricks-schema",
+        description="Databricks Unity Catalog schema extractor",
+    )
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    subparsers.required = True
+
+    # extract
+    extract_p = subparsers.add_parser(
+        "extract", help="Extract Unity Catalog schemas to YAML files."
+    )
+    extract_p.add_argument("catalog", help="Catalog name")
+    extract_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    extract_p.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        dest="output_dir",
+        metavar="DIR",
+        help="Output directory for per-schema YAML files",
+    )
+    extract_p.add_argument(
+        "--include-system",
+        action="store_true",
+        dest="include_system",
+        help="Include system schemas (information_schema)",
+    )
+    extract_p.add_argument(
+        "--storage-location",
+        action="store_true",
+        dest="storage_location",
+        help="Include storage_location in output",
+    )
+    _add_connection_args(extract_p)
+    extract_p.set_defaults(func=_cmd_extract)
+
+    # diff
+    diff_p = subparsers.add_parser(
+        "diff", help="Compare Unity Catalog schemas against local YAML files."
+    )
+    diff_p.add_argument("catalog", help="Catalog name")
+    diff_p.add_argument("schema_dir", type=Path, help="Directory containing per-schema YAML files")
+    diff_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    _add_connection_args(diff_p)
+    diff_p.set_defaults(func=_cmd_diff)
+
+    # list-catalogs
+    list_catalogs_p = subparsers.add_parser("list-catalogs", help="List all accessible catalogs.")
+    _add_connection_args(list_catalogs_p)
+    list_catalogs_p.set_defaults(func=_cmd_list_catalogs)
+
+    # list-schemas
+    list_schemas_p = subparsers.add_parser("list-schemas", help="List schemas in a catalog.")
+    list_schemas_p.add_argument("catalog", help="Catalog name")
+    _add_connection_args(list_schemas_p)
+    list_schemas_p.set_defaults(func=_cmd_list_schemas)
+
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+    args = parser.parse_args()
+    args.func(args)
