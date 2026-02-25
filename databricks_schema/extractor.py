@@ -29,7 +29,7 @@ class CatalogExtractor:
                 if key is not None:
                     tags[key] = value or ""
         except NotFound:
-            logger.error("Not found when fetching tags for %s '%s'", entity_type, entity_name)
+            logger.warning("Not found when fetching tags for %s '%s'", entity_type, entity_name)
         return tags
 
     def iter_schemas(
