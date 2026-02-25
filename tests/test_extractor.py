@@ -26,12 +26,6 @@ def _make_tag(key, value=""):
     return t
 
 
-def _make_table_summary(name):
-    ts = MagicMock()
-    ts.name = name
-    return ts
-
-
 def _make_sdk_table(
     name,
     table_type_val=None,
@@ -61,9 +55,9 @@ def _make_constraint(pk=None, fk=None):
 
 
 class TestCatalogExtractor:
-    def _extractor(self):
+    def _extractor(self, max_workers=1):
         client = MagicMock()
-        return CatalogExtractor(client=client), client
+        return CatalogExtractor(client=client, max_workers=max_workers), client
 
     def test_empty_catalog(self):
         extractor, client = self._extractor()
@@ -98,7 +92,7 @@ class TestCatalogExtractor:
         assert len(catalog.schemas) == 1
         assert catalog.schemas[0].name == "keep"
 
-    def test_system_schema_skipped_by_default(self):
+    def test_system_schema_always_skipped(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -110,24 +104,8 @@ class TestCatalogExtractor:
         sys_schema.owner = None
         client.schemas.list.return_value = [sys_schema]
 
-        catalog = extractor.extract_catalog("mycat", skip_system_schemas=True)
+        catalog = extractor.extract_catalog("mycat")
         assert catalog.schemas == []
-
-    def test_system_schema_included_when_flag_off(self):
-        extractor, client = self._extractor()
-        sdk_catalog = MagicMock()
-        sdk_catalog.comment = None
-        client.catalogs.get.return_value = sdk_catalog
-
-        sys_schema = MagicMock()
-        sys_schema.name = "information_schema"
-        sys_schema.comment = None
-        sys_schema.owner = None
-        client.schemas.list.return_value = [sys_schema]
-        client.tables.list.return_value = []
-
-        catalog = extractor.extract_catalog("mycat", skip_system_schemas=False)
-        assert len(catalog.schemas) == 1
 
     def test_columns_sorted_by_position(self):
         extractor, client = self._extractor()
@@ -141,14 +119,12 @@ class TestCatalogExtractor:
         s.owner = None
         client.schemas.list.return_value = [s]
 
-        client.tables.list.return_value = [_make_table_summary("orders")]
-
         col_a = _make_col("a", position=2, type_text="STRING")
         col_b = _make_col("b", position=1, type_text="BIGINT")
         col_c = _make_col("c", position=None, type_text="BOOLEAN")  # None → 9999
 
         sdk_table = _make_sdk_table("orders", columns=[col_a, col_b, col_c])
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         cols = catalog.schemas[0].tables[0].columns
@@ -165,7 +141,6 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("orders")]
 
         pk_c = MagicMock()
         pk_c.name = "pk_orders"
@@ -173,7 +148,7 @@ class TestCatalogExtractor:
         constraint = _make_constraint(pk=pk_c)
 
         sdk_table = _make_sdk_table("orders", constraints=[constraint])
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
@@ -192,7 +167,6 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("orders")]
 
         fk_c = MagicMock()
         fk_c.name = "fk_user"
@@ -202,7 +176,7 @@ class TestCatalogExtractor:
         constraint = _make_constraint(fk=fk_c)
 
         sdk_table = _make_sdk_table("orders", constraints=[constraint])
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
@@ -214,7 +188,6 @@ class TestCatalogExtractor:
         assert fk.columns == ["user_id"]
 
     def test_owner_and_created_at_extracted(self):
-
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -225,11 +198,10 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("t")]
 
         created_at_ms = 1_700_000_000_000  # milliseconds
         sdk_table = _make_sdk_table("t", owner="alice", created_at=created_at_ms)
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
@@ -265,10 +237,9 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("t")]
 
         sdk_table = _make_sdk_table("t", table_type_val="EXTERNAL")
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         assert catalog.schemas[0].tables[0].table_type == TableType.EXTERNAL
@@ -307,10 +278,9 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("orders")]
 
         sdk_table = _make_sdk_table("orders")
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         def mock_list(entity_type, entity_name):
             if entity_type == "tables" and entity_name == "mycat.main.orders":
@@ -333,11 +303,10 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("orders")]
 
         col = _make_col("order_id", position=1, type_text="BIGINT")
         sdk_table = _make_sdk_table("orders", columns=[col])
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         def mock_list(entity_type, entity_name):
             if entity_type == "columns" and entity_name == "mycat.main.orders.order_id":
@@ -360,11 +329,10 @@ class TestCatalogExtractor:
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
-        client.tables.list.return_value = [_make_table_summary("orders")]
 
         col = _make_col("order_id", position=1, type_text="BIGINT")
         sdk_table = _make_sdk_table("orders", columns=[col])
-        client.tables.get.return_value = sdk_table
+        client.tables.list.return_value = [sdk_table]
 
         client.entity_tag_assignments.list.side_effect = NotFound("column not found")
 
@@ -373,3 +341,67 @@ class TestCatalogExtractor:
 
         assert catalog.schemas[0].tables[0].columns[0].tags == {}
         assert any("Not found" in r.message for r in caplog.records)
+
+    def test_no_tags_skips_all_tag_calls(self):
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        col = _make_col("id", position=1, type_text="BIGINT")
+        sdk_table = _make_sdk_table("orders", columns=[col])
+        client.tables.list.return_value = [sdk_table]
+
+        catalog = extractor.extract_catalog("mycat", include_tags=False)
+
+        client.entity_tag_assignments.list.assert_not_called()
+        assert catalog.tags == {}
+        assert catalog.schemas[0].tags == {}
+        assert catalog.schemas[0].tables[0].tags == {}
+        assert catalog.schemas[0].tables[0].columns[0].tags == {}
+
+    def test_tables_get_not_called(self):
+        """tables.list results are used directly — tables.get should never be called."""
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        sdk_table = _make_sdk_table("orders")
+        client.tables.list.return_value = [sdk_table]
+
+        extractor.extract_catalog("mycat")
+
+        client.tables.get.assert_not_called()
+
+    def test_parallel_extraction(self):
+        """With max_workers > 1, all tables are still extracted correctly."""
+        extractor, client = self._extractor(max_workers=4)
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        tables = [_make_sdk_table(f"t{i}") for i in range(5)]
+        client.tables.list.return_value = tables
+
+        catalog = extractor.extract_catalog("mycat", include_tags=False)
+        assert len(catalog.schemas[0].tables) == 5
+        assert {t.name for t in catalog.schemas[0].tables} == {"t0", "t1", "t2", "t3", "t4"}

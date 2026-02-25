@@ -8,6 +8,7 @@ A CLI tool and Python library for extracting and diffing Databricks Unity Catalo
 - Captures primary keys, foreign keys, and Unity Catalog governance tags
 - Outputs one YAML file per schema for easy diffing and version control
 - Compares live catalog state against local YAML files (`diff` command)
+- Parallel table extraction (configurable worker count) for fast extraction of large catalogs
 - Pydantic v2 models as the intermediate representation (ready for bidirectional sync)
 
 ## Installation
@@ -65,10 +66,16 @@ Print a single schema to stdout (no `--output-dir`):
 databricks-schema extract <catalog> --schema main
 ```
 
-Include system schemas (`information_schema`):
+Skip tag lookups for faster extraction (tags will be absent from output):
 
 ```bash
-databricks-schema extract <catalog> --output-dir ./schemas/ --include-system
+databricks-schema extract <catalog> --output-dir ./schemas/ --no-tags
+```
+
+Control the number of parallel workers (default: 4):
+
+```bash
+databricks-schema extract <catalog> --output-dir ./schemas/ --workers 8
 ```
 
 ### `diff`
@@ -83,6 +90,12 @@ Compare specific schemas only:
 
 ```bash
 databricks-schema diff <catalog> ./schemas/ --schema main --schema raw
+```
+
+Skip tag lookups during comparison:
+
+```bash
+databricks-schema diff <catalog> ./schemas/ --no-tags
 ```
 
 Exits with code `0` if no differences are found, `1` if there are — making it suitable for CI pipelines. Output example:
@@ -163,9 +176,12 @@ from pathlib import Path
 from databricks_schema import CatalogExtractor, catalog_to_yaml, schema_from_yaml
 from databricks_schema import diff_catalog_with_dir, diff_schemas
 
-# Extract using configured auth
-extractor = CatalogExtractor()
+# Extract using configured auth (max_workers controls parallel table extraction)
+extractor = CatalogExtractor(max_workers=4)
 catalog = extractor.extract_catalog("my_catalog", schema_filter=["main", "raw"])
+
+# Skip tag lookups for faster extraction
+catalog = extractor.extract_catalog("my_catalog", include_tags=False)
 
 # Serialise to YAML
 yaml_text = catalog_to_yaml(catalog)
