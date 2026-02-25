@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 from databricks.sdk import WorkspaceClient
@@ -15,8 +16,9 @@ _SYSTEM_SCHEMAS = {"information_schema"}
 
 
 class CatalogExtractor:
-    def __init__(self, client: WorkspaceClient | None = None) -> None:
+    def __init__(self, client: WorkspaceClient | None = None, max_workers: int = 4) -> None:
         self.client = client or WorkspaceClient()
+        self.max_workers = max_workers
 
     def _fetch_tags(self, entity_type: str, entity_name: str) -> dict[str, str]:
         tags: dict[str, str] = {}
@@ -36,6 +38,7 @@ class CatalogExtractor:
         schema_filter: list[str] | None = None,
         skip_system_schemas: bool = True,
         include_storage_location: bool = False,
+        include_tags: bool = True,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
             schema_name = sdk_schema.name or ""
@@ -43,7 +46,9 @@ class CatalogExtractor:
                 continue
             if schema_filter and schema_name not in schema_filter:
                 continue
-            yield self._extract_schema(catalog_name, sdk_schema, include_storage_location)
+            yield self._extract_schema(
+                catalog_name, sdk_schema, include_storage_location, include_tags
+            )
 
     def extract_catalog(
         self,
@@ -51,13 +56,18 @@ class CatalogExtractor:
         schema_filter: list[str] | None = None,
         skip_system_schemas: bool = True,
         include_storage_location: bool = False,
+        include_tags: bool = True,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
-        catalog_tags = self._fetch_tags("catalogs", catalog_name)
+        catalog_tags = self._fetch_tags("catalogs", catalog_name) if include_tags else {}
 
         schemas = list(
             self.iter_schemas(
-                catalog_name, schema_filter, skip_system_schemas, include_storage_location
+                catalog_name,
+                schema_filter,
+                skip_system_schemas,
+                include_storage_location,
+                include_tags,
             )
         )
 
@@ -69,21 +79,32 @@ class CatalogExtractor:
         )
 
     def _extract_schema(
-        self, catalog_name: str, sdk_schema, include_storage_location: bool = False
+        self,
+        catalog_name: str,
+        sdk_schema,
+        include_storage_location: bool = False,
+        include_tags: bool = True,
     ) -> Schema:
         schema_name = sdk_schema.name or ""
-        schema_tags = self._fetch_tags("schemas", f"{catalog_name}.{schema_name}")
+        schema_tags = (
+            self._fetch_tags("schemas", f"{catalog_name}.{schema_name}") if include_tags else {}
+        )
 
-        tables: list[Table] = []
-        for sdk_table_summary in self.client.tables.list(
-            catalog_name=catalog_name, schema_name=schema_name
-        ):
-            table_name = sdk_table_summary.name or ""
-            full_name = f"{catalog_name}.{schema_name}.{table_name}"
-            table = self._extract_table(
-                catalog_name, schema_name, full_name, include_storage_location
+        # tables.list returns full TableInfo (columns + constraints included) — no tables.get needed
+        sdk_tables = list(
+            self.client.tables.list(catalog_name=catalog_name, schema_name=schema_name)
+        )
+
+        def extract_one(sdk_table) -> Table:
+            return self._extract_table(
+                catalog_name, schema_name, sdk_table, include_storage_location, include_tags
             )
-            tables.append(table)
+
+        if self.max_workers > 1 and len(sdk_tables) > 1:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                tables = list(executor.map(extract_one, sdk_tables))
+        else:
+            tables = [extract_one(t) for t in sdk_tables]
 
         return Schema(
             name=schema_name,
@@ -97,11 +118,13 @@ class CatalogExtractor:
         self,
         catalog_name: str,
         schema_name: str,
-        full_name: str,
+        sdk_table,
         include_storage_location: bool = False,
+        include_tags: bool = True,
     ) -> Table:
-        sdk_table = self.client.tables.get(full_name)
-        table_tags = self._fetch_tags("tables", full_name)
+        table_name = sdk_table.name or ""
+        full_name = f"{catalog_name}.{schema_name}.{table_name}"
+        table_tags = self._fetch_tags("tables", full_name) if include_tags else {}
 
         # Build columns sorted by position
         sdk_columns = list(getattr(sdk_table, "columns", None) or [])
@@ -119,7 +142,11 @@ class CatalogExtractor:
             else:
                 data_type = "UNKNOWN"
 
-            col_tags = self._fetch_tags("columns", f"{full_name}.{sdk_col.name or ''}")
+            col_tags = (
+                self._fetch_tags("columns", f"{full_name}.{sdk_col.name or ''}")
+                if include_tags
+                else {}
+            )
             columns.append(
                 Column(
                     name=sdk_col.name or "",

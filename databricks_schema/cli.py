@@ -43,7 +43,7 @@ def _add_connection_args(parser: argparse.ArgumentParser) -> None:
 def _cmd_extract(args: argparse.Namespace) -> None:
     """Extract Unity Catalog schemas to YAML files."""
     client = _make_client(args.host, args.token)
-    extractor = CatalogExtractor(client=client)
+    extractor = CatalogExtractor(client=client, max_workers=args.workers)
 
     print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
@@ -66,6 +66,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             schema_filter=args.schema,
             skip_system_schemas=not args.include_system,
             include_storage_location=args.storage_location,
+            include_tags=not args.no_tags,
         )
         print(schema_to_yaml(catalog_obj.schemas[0]))
         return
@@ -78,6 +79,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         schema_filter=args.schema,
         skip_system_schemas=not args.include_system,
         include_storage_location=args.storage_location,
+        include_tags=not args.no_tags,
     ):
         out_file = output_dir / f"{s.name}.yaml"
         out_file.write_text(schema_to_yaml(s), encoding="utf-8")
@@ -100,11 +102,12 @@ def _cmd_diff(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     client = _make_client(args.host, args.token)
-    extractor = CatalogExtractor(client=client)
+    extractor = CatalogExtractor(client=client, max_workers=args.workers)
     print(f"Comparing catalog '{args.catalog}' against {schema_dir}...", file=sys.stderr)
     catalog_obj = extractor.extract_catalog(
         catalog_name=args.catalog,
         schema_filter=args.schema,
+        include_tags=not args.no_tags,
     )
 
     result = diff_catalog_with_dir(
@@ -193,6 +196,19 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="storage_location",
         help="Include storage_location in output",
     )
+    extract_p.add_argument(
+        "--no-tags",
+        action="store_true",
+        dest="no_tags",
+        help="Skip tag lookups (faster, omits tags from output)",
+    )
+    extract_p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of parallel workers for table extraction (default: 4)",
+    )
     _add_connection_args(extract_p)
     extract_p.set_defaults(func=_cmd_extract)
 
@@ -208,6 +224,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="SCHEMA",
         help="Schema filter (repeatable)",
+    )
+    diff_p.add_argument(
+        "--no-tags",
+        action="store_true",
+        dest="no_tags",
+        help="Skip tag lookups (faster, omits tags from comparison)",
+    )
+    diff_p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of parallel workers for table extraction (default: 4)",
     )
     _add_connection_args(diff_p)
     diff_p.set_defaults(func=_cmd_diff)
