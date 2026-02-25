@@ -7,7 +7,7 @@ packages = ["databricks_schema"]
 
 [project]
 name = "databricks-schema"
-version = "0.3.0"
+version = "0.3.1"
 description = "Databricks Unity Catalog schema extractor"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,11 +16,10 @@ dependencies = [
     "databricks-sdk>=0.64.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "typer>=0.12",
 ]
 
 [project.scripts]
-databricks-schema = "databricks_schema.cli:app"
+databricks-schema = "databricks_schema.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-mock>=3.14", "ruff>=0.9"]

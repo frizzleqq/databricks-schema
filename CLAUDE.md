@@ -22,7 +22,7 @@ databricks_schema/
   extractor.py   # CatalogExtractor — wraps databricks-sdk
   yaml_io.py     # schema/catalog to/from YAML; _strip_empty removes None + empty collections
   diff.py        # diff_schemas / diff_catalog_with_dir; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
-  cli.py         # Typer CLI: extract, diff, list-catalogs, list-schemas
+  cli.py         # argparse CLI: extract, diff, list-catalogs, list-schemas
   __init__.py    # public re-exports
 tests/
   test_models.py
