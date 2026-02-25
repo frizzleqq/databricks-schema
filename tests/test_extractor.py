@@ -92,7 +92,7 @@ class TestCatalogExtractor:
         assert len(catalog.schemas) == 1
         assert catalog.schemas[0].name == "keep"
 
-    def test_system_schema_skipped_by_default(self):
+    def test_system_schema_always_skipped(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -104,24 +104,8 @@ class TestCatalogExtractor:
         sys_schema.owner = None
         client.schemas.list.return_value = [sys_schema]
 
-        catalog = extractor.extract_catalog("mycat", skip_system_schemas=True)
+        catalog = extractor.extract_catalog("mycat")
         assert catalog.schemas == []
-
-    def test_system_schema_included_when_flag_off(self):
-        extractor, client = self._extractor()
-        sdk_catalog = MagicMock()
-        sdk_catalog.comment = None
-        client.catalogs.get.return_value = sdk_catalog
-
-        sys_schema = MagicMock()
-        sys_schema.name = "information_schema"
-        sys_schema.comment = None
-        sys_schema.owner = None
-        client.schemas.list.return_value = [sys_schema]
-        client.tables.list.return_value = []
-
-        catalog = extractor.extract_catalog("mycat", skip_system_schemas=False)
-        assert len(catalog.schemas) == 1
 
     def test_columns_sorted_by_position(self):
         extractor, client = self._extractor()

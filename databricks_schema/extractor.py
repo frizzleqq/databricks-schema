@@ -36,13 +36,12 @@ class CatalogExtractor:
         self,
         catalog_name: str,
         schema_filter: list[str] | None = None,
-        skip_system_schemas: bool = True,
         include_storage_location: bool = False,
         include_tags: bool = True,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
             schema_name = sdk_schema.name or ""
-            if skip_system_schemas and schema_name in _SYSTEM_SCHEMAS:
+            if schema_name in _SYSTEM_SCHEMAS:
                 continue
             if schema_filter and schema_name not in schema_filter:
                 continue
@@ -54,7 +53,6 @@ class CatalogExtractor:
         self,
         catalog_name: str,
         schema_filter: list[str] | None = None,
-        skip_system_schemas: bool = True,
         include_storage_location: bool = False,
         include_tags: bool = True,
     ) -> Catalog:
@@ -65,7 +63,6 @@ class CatalogExtractor:
             self.iter_schemas(
                 catalog_name,
                 schema_filter,
-                skip_system_schemas,
                 include_storage_location,
                 include_tags,
             )

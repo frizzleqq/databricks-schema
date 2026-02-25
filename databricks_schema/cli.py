@@ -52,7 +52,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         matching_schemas = [
             s.name
             for s in client.schemas.list(catalog_name=args.catalog)
-            if (args.include_system or (s.name or "") not in {"information_schema"})
+            if (s.name or "") not in {"information_schema"}
             and (schema_filter_set is None or (s.name or "") in schema_filter_set)
         ]
         if len(matching_schemas) != 1:
@@ -64,7 +64,6 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         catalog_obj = extractor.extract_catalog(
             catalog_name=args.catalog,
             schema_filter=args.schema,
-            skip_system_schemas=not args.include_system,
             include_storage_location=args.storage_location,
             include_tags=not args.no_tags,
         )
@@ -77,7 +76,6 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     for s in extractor.iter_schemas(
         catalog_name=args.catalog,
         schema_filter=args.schema,
-        skip_system_schemas=not args.include_system,
         include_storage_location=args.storage_location,
         include_tags=not args.no_tags,
     ):
@@ -183,12 +181,6 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="output_dir",
         metavar="DIR",
         help="Output directory for per-schema YAML files",
-    )
-    extract_p.add_argument(
-        "--include-system",
-        action="store_true",
-        dest="include_system",
-        help="Include system schemas (information_schema)",
     )
     extract_p.add_argument(
         "--storage-location",

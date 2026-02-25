@@ -66,12 +66,6 @@ Print a single schema to stdout (no `--output-dir`):
 databricks-schema extract <catalog> --schema main
 ```
 
-Include system schemas (`information_schema`):
-
-```bash
-databricks-schema extract <catalog> --output-dir ./schemas/ --include-system
-```
-
 Skip tag lookups for faster extraction (tags will be absent from output):
 
 ```bash
