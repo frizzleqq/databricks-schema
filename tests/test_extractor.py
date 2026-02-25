@@ -318,7 +318,7 @@ class TestCatalogExtractor:
         catalog = extractor.extract_catalog("mycat")
         assert catalog.schemas[0].tables[0].columns[0].tags == {"sensitivity": "high"}
 
-    def test_fetch_tags_not_found_logs_error_and_continues(self, caplog):
+    def test_fetch_tags_not_found_logs_warning_and_continues(self, caplog):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -336,7 +336,7 @@ class TestCatalogExtractor:
 
         client.entity_tag_assignments.list.side_effect = NotFound("column not found")
 
-        with caplog.at_level(logging.ERROR, logger="databricks_schema.extractor"):
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
             catalog = extractor.extract_catalog("mycat")
 
         assert catalog.schemas[0].tables[0].columns[0].tags == {}
