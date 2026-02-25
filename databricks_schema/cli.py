@@ -8,9 +8,16 @@ from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 
-from databricks_schema.diff import CatalogDiff, diff_catalog_with_dir
+from databricks_schema.diff import CatalogDiff, SchemaDiff, diff_catalog_with_dir, diff_schemas
 from databricks_schema.extractor import CatalogExtractor
-from databricks_schema.yaml_io import schema_to_json, schema_to_yaml
+from databricks_schema.models import Schema
+from databricks_schema.sql_gen import schema_diff_to_sql
+from databricks_schema.yaml_io import (
+    schema_from_json,
+    schema_from_yaml,
+    schema_to_json,
+    schema_to_yaml,
+)
 
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
@@ -149,6 +156,84 @@ def _print_diff(result: CatalogDiff) -> None:
                     print(f"        {fc.field}: {fc.old!r} -> {fc.new!r}")
 
 
+def _cmd_generate_sql(args: argparse.Namespace) -> None:
+    """Generate SQL statements to bring the live catalog in line with local files."""
+    schema_dir: Path = args.schema_dir
+    if not schema_dir.is_dir():
+        print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
+        sys.exit(2)
+
+    yaml_files = list(schema_dir.glob("*.yaml"))
+    json_files = list(schema_dir.glob("*.json"))
+    if yaml_files and json_files:
+        print("Error: mixed YAML and JSON files in schema directory.", file=sys.stderr)
+        sys.exit(2)
+    elif not yaml_files and not json_files:
+        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
+    fmt = "json" if json_files else "yaml"
+    ext = ".json" if fmt == "json" else ".yaml"
+    loader = schema_from_json if fmt == "json" else schema_from_yaml
+
+    schema_filter_set: frozenset[str] | None = frozenset(args.schema) if args.schema else None
+    stored: dict[str, Schema] = {}
+    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
+        if schema_filter_set is not None and schema_file.stem not in schema_filter_set:
+            continue
+        schema = loader(schema_file.read_text(encoding="utf-8"))
+        stored[schema.name] = schema
+
+    client = _make_client(args.host, args.token)
+    extractor = CatalogExtractor(client=client, max_workers=args.workers)
+    print(f"Generating SQL for catalog '{args.catalog}' against {schema_dir}...", file=sys.stderr)
+    catalog_obj = extractor.extract_catalog(
+        catalog_name=args.catalog,
+        schema_filter=args.schema,
+        include_tags=not args.no_tags,
+    )
+
+    live = {s.name: s for s in catalog_obj.schemas}
+    ignore_added: frozenset[str] = frozenset({"default"})
+    sql_outputs: list[tuple[str, str]] = []
+
+    for name, stored_schema in stored.items():
+        if name not in live:
+            sd: SchemaDiff = SchemaDiff(name=name, status="removed")
+        else:
+            sd = diff_schemas(live[name], stored_schema)
+
+        if not sd.has_changes:
+            continue
+
+        sql = schema_diff_to_sql(args.catalog, sd, stored_schema, args.allow_drop)
+        if sql:
+            sql_outputs.append((name, sql))
+
+    for name in live:
+        if name not in stored and name not in ignore_added:
+            sd = SchemaDiff(name=name, status="added")
+            sql = schema_diff_to_sql(args.catalog, sd, None, args.allow_drop)
+            if sql:
+                sql_outputs.append((name, sql))
+
+    if not sql_outputs:
+        print("No differences found — no SQL generated.")
+        return
+
+    if args.output_dir:
+        output_dir: Path = args.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for schema_name, sql in sql_outputs:
+            out_file = output_dir / f"{schema_name}.sql"
+            out_file.write_text(sql, encoding="utf-8")
+            print(f"  Wrote {out_file}", file=sys.stderr)
+    else:
+        for schema_name, sql in sql_outputs:
+            print(f"-- Schema: {schema_name}")
+            print(sql)
+            print()
+
+
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
     client = _make_client(args.host, args.token)
@@ -249,6 +334,52 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_connection_args(diff_p)
     diff_p.set_defaults(func=_cmd_diff)
+
+    # generate-sql
+    gen_sql_p = subparsers.add_parser(
+        "generate-sql",
+        help="Generate SQL statements to bring the live catalog in line with local files.",
+    )
+    gen_sql_p.add_argument("catalog", help="Catalog name")
+    gen_sql_p.add_argument(
+        "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
+    )
+    gen_sql_p.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        dest="output_dir",
+        metavar="DIR",
+        help="Write one .sql file per schema instead of printing to stdout",
+    )
+    gen_sql_p.add_argument(
+        "--allow-drop",
+        action="store_true",
+        dest="allow_drop",
+        help="Emit real DROP statements instead of commented-out ones",
+    )
+    gen_sql_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    gen_sql_p.add_argument(
+        "--no-tags",
+        action="store_true",
+        dest="no_tags",
+        help="Skip tag lookups (faster, omits tags from comparison)",
+    )
+    gen_sql_p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of parallel workers for table extraction (default: 4)",
+    )
+    _add_connection_args(gen_sql_p)
+    gen_sql_p.set_defaults(func=_cmd_generate_sql)
 
     # list-catalogs
     list_catalogs_p = subparsers.add_parser("list-catalogs", help="List all accessible catalogs.")
