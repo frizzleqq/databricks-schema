@@ -4,19 +4,19 @@ A CLI tool and Python library for extracting, diffing, and generating SQL for Da
 
 ## Overview
 
-A typical workflow compares a production catalog against a test catalog and produces migration SQL:
+Extract a catalog to YAML files, then diff those files against any catalog — the same one later to detect drift, or a different one to compare environments (e.g. prod vs test):
 
 ```bash
-# 1. Find the catalog you want to use as the source of truth
+# 1. Find the catalog you want to snapshot
 databricks-schema list-catalogs
 
 # 2. Extract its schemas to YAML files (one file per schema)
 databricks-schema extract prod_catalog --output-dir ./schemas/
 
-# 3. Diff those files against another catalog (e.g. test)
+# 3. Diff those files against a catalog (same or different)
 databricks-schema diff test_catalog ./schemas/
 
-# 4. Generate SQL to bring test_catalog in line with the YAML files
+# 4. Generate SQL to bring that catalog in line with the YAML files
 databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations/
 ```
 
