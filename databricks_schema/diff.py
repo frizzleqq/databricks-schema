@@ -83,7 +83,9 @@ def _diff_columns(live_cols: list[Column], stored_cols: list[Column]) -> list[Co
     return diffs
 
 
-def _diff_tables(live_tables: list[Table], stored_tables: list[Table]) -> list[TableDiff]:
+def _diff_tables(
+    live_tables: list[Table], stored_tables: list[Table], include_metadata: bool = False
+) -> list[TableDiff]:
     live_map = {t.name: t for t in live_tables}
     stored_map = {t.name: t for t in stored_tables}
     diffs: list[TableDiff] = []
@@ -92,16 +94,16 @@ def _diff_tables(live_tables: list[Table], stored_tables: list[Table]) -> list[T
         if name not in live_map:
             diffs.append(TableDiff(name=name, status="removed"))
 
+    table_fields = ["table_type", "comment", "primary_key", "foreign_keys", "tags"]
+    if include_metadata:
+        table_fields.insert(2, "owner")
+
     for name, live_table in live_map.items():
         if name not in stored_map:
             diffs.append(TableDiff(name=name, status="added"))
         else:
             stored_table = stored_map[name]
-            changes = _compare_fields(
-                stored_table,
-                live_table,
-                ["table_type", "comment", "owner", "primary_key", "foreign_keys", "tags"],
-            )
+            changes = _compare_fields(stored_table, live_table, table_fields)
             col_diffs = _diff_columns(live_table.columns, stored_table.columns)
             if changes or col_diffs:
                 diffs.append(
@@ -111,14 +113,17 @@ def _diff_tables(live_tables: list[Table], stored_tables: list[Table]) -> list[T
     return diffs
 
 
-def diff_schemas(live: Schema, stored: Schema) -> SchemaDiff:
+def diff_schemas(live: Schema, stored: Schema, include_metadata: bool = False) -> SchemaDiff:
     """Compare a live Schema against a stored Schema.
 
     Returns a SchemaDiff describing what changed between the stored YAML state
     and the live catalog state.
     """
-    changes = _compare_fields(stored, live, ["comment", "owner", "tags"])
-    table_diffs = _diff_tables(live.tables, stored.tables)
+    schema_fields = ["comment", "tags"]
+    if include_metadata:
+        schema_fields.insert(1, "owner")
+    changes = _compare_fields(stored, live, schema_fields)
+    table_diffs = _diff_tables(live.tables, stored.tables, include_metadata)
     status = "modified" if (changes or table_diffs) else "unchanged"
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)
 
@@ -129,6 +134,7 @@ def diff_catalog_with_dir(
     ignore_added: frozenset[str] = frozenset({"default"}),
     schema_names: frozenset[str] | None = None,
     fmt: Literal["yaml", "json"] = "yaml",
+    include_metadata: bool = False,
 ) -> CatalogDiff:
     """Compare a Catalog against schema files in schema_dir.
 
@@ -160,7 +166,7 @@ def diff_catalog_with_dir(
         if name not in live:
             schema_diffs.append(SchemaDiff(name=name, status="removed"))
         else:
-            schema_diffs.append(diff_schemas(live[name], stored_schema))
+            schema_diffs.append(diff_schemas(live[name], stored_schema, include_metadata))
 
     for name in live:
         if name not in stored and name not in ignore_added:

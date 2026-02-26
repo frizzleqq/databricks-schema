@@ -1,5 +1,3 @@
-from datetime import UTC
-
 import pytest
 from databricks.sdk.service.catalog import TableType
 from pydantic import ValidationError
@@ -85,19 +83,14 @@ class TestTable:
         assert t.tags == {}
         assert t.storage_location is None
         assert t.owner is None
-        assert t.created_at is None
 
     def test_with_type(self):
         t = Table(name="v", table_type=TableType.VIEW)
         assert t.table_type is TableType.VIEW
 
-    def test_owner_and_created_at(self):
-        from datetime import datetime
-
-        ts = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
-        t = Table(name="t", owner="alice", created_at=ts)
+    def test_owner(self):
+        t = Table(name="t", owner="alice")
         assert t.owner == "alice"
-        assert t.created_at == ts
 
 
 class TestSchema:

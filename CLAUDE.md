@@ -51,8 +51,7 @@ tests/
 - `extract` `--format`/`-f` selects output format (`yaml` default, `json` opt-in); dest is `fmt`
 - `diff` auto-detects format from files present in the directory; exits 2 on mixed YAML+JSON
 - `TableType` is re-exported from `databricks.sdk.service.catalog` — do not redefine it
-- `Table.created_at` is stored as UTC `datetime`, converted from SDK milliseconds timestamp
-- `storage_location` is opt-in via `--storage-location` flag (excluded by default)
+- `--include-metadata` flag (on `extract`, `diff`, `generate-sql`) enables `owner` + `storage_location`; both are excluded by default
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)
 - `generate-sql` auto-detects format from files; exits 2 on mixed YAML+JSON or empty directory
