@@ -2,15 +2,25 @@
 
 A CLI tool and Python library for extracting, diffing, and generating SQL for Databricks Unity Catalog schemas stored as YAML files.
 
-## Features
+## Overview
 
-- Extracts catalog → schemas → tables → columns (with types, comments, nullability, owner, created_at)
-- Captures primary keys, foreign keys, and Unity Catalog governance tags
-- Outputs one YAML file per schema for easy diffing and version control
-- Compares live catalog state against local YAML or JSON files (`diff` command, format auto-detected)
-- Generates Databricks Spark SQL (`generate-sql`) to bring the live catalog in line with local files
-- Parallel table extraction (configurable worker count) for fast extraction of large catalogs
-- Pydantic v2 models as the intermediate representation (ready for bidirectional sync)
+A typical workflow compares a production catalog against a test catalog and produces migration SQL:
+
+```bash
+# 1. Find the catalog you want to use as the source of truth
+databricks-schema list-catalogs
+
+# 2. Extract its schemas to YAML files (one file per schema)
+databricks-schema extract prod_catalog --output-dir ./schemas/
+
+# 3. Diff those files against another catalog (e.g. test)
+databricks-schema diff test_catalog ./schemas/
+
+# 4. Generate SQL to bring test_catalog in line with the YAML files
+databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations/
+```
+
+The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
 
 ## Installation
 
