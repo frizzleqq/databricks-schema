@@ -1,15 +1,26 @@
 # databricks-schema
 
-A CLI tool and Python library for extracting and diffing Databricks Unity Catalog schemas to YAML files.
+A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
-## Features
+## Overview
 
-- Extracts catalog → schemas → tables → columns (with types, comments, nullability, owner, created_at)
-- Captures primary keys, foreign keys, and Unity Catalog governance tags
-- Outputs one YAML file per schema for easy diffing and version control
-- Compares live catalog state against local YAML or JSON files (`diff` command, format auto-detected)
-- Parallel table extraction (configurable worker count) for fast extraction of large catalogs
-- Pydantic v2 models as the intermediate representation (ready for bidirectional sync)
+Extract a catalog to YAML files, then diff those files against any catalog — the same one later to detect drift, or a different one to compare environments (e.g. prod vs test):
+
+```bash
+# 1. Find the catalog you want to snapshot
+databricks-schema list-catalogs
+
+# 2. Extract its schemas to YAML files (one file per schema)
+databricks-schema extract prod_catalog --output-dir ./schemas/
+
+# 3. Diff those files against a catalog (same or different)
+databricks-schema diff test_catalog ./schemas/
+
+# 4. Generate SQL to bring that catalog in line with the YAML files
+databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations/
+```
+
+The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
 
 ## Installation
 
@@ -115,6 +126,53 @@ Exits with code `0` if no differences are found, `1` if there are — making it 
 
 Markers: `+` added in catalog, `-` removed from catalog, `~` modified.
 
+### `generate-sql`
+
+Generate Databricks Spark SQL statements to bring the live catalog in line with local schema files (format auto-detected, YAML or JSON, not mixed). Statements are printed to stdout by default:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/
+```
+
+Write one `.sql` file per schema to a directory instead:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/
+```
+
+Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`) are emitted as SQL comments by default. Pass `--allow-drop` to emit them as executable statements:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --allow-drop
+```
+
+Filter to specific schemas:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --schema main --schema raw
+```
+
+Skip tag lookups for faster comparison:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --no-tags
+```
+
+**SQL generated per diff type:**
+
+| Situation | SQL emitted |
+|---|---|
+| Schema in local files, missing from live | `CREATE SCHEMA IF NOT EXISTS …` + owner/comment/tags + `CREATE TABLE` for each table |
+| Schema in live, missing from local files | `-- DROP SCHEMA … CASCADE;` (or real with `--allow-drop`) |
+| Table in local files, missing from live | `CREATE TABLE IF NOT EXISTS … (cols…)` + owner/tags |
+| Table in live, missing from local files | `-- DROP TABLE …;` (or real with `--allow-drop`) |
+| Column in local files, missing from live | `ALTER TABLE … ADD COLUMN …` |
+| Column in live, missing from local files | `-- ALTER TABLE … DROP COLUMN …;` (or real with `--allow-drop`) |
+| Schema/table/column field changed | `COMMENT ON …`, `SET OWNER TO`, `SET TAGS`, `UNSET TAGS`, `ALTER COLUMN …` |
+| Primary key changed | `DROP PRIMARY KEY IF EXISTS` + `ADD CONSTRAINT … PRIMARY KEY` |
+| Foreign key changed | `DROP FOREIGN KEY IF EXISTS` / `ADD CONSTRAINT … FOREIGN KEY … REFERENCES …` |
+| `table_type` changed | `-- TODO: unsupported change: table_type …` |
+
 ### `list-catalogs`
 
 List all accessible catalogs:
@@ -174,7 +232,7 @@ tables:
 ```python
 from pathlib import Path
 from databricks_schema import CatalogExtractor, catalog_to_yaml, schema_from_yaml
-from databricks_schema import diff_catalog_with_dir, diff_schemas
+from databricks_schema import diff_catalog_with_dir, diff_schemas, schema_diff_to_sql
 
 # Extract using configured auth (max_workers controls parallel table extraction)
 extractor = CatalogExtractor(max_workers=4)
@@ -198,8 +256,11 @@ if result.has_changes:
 
 # Compare two Schema objects directly
 stored = schema_from_yaml(open("schemas/main.yaml").read())
-live = extractor._extract_schema("my_catalog", ...)
-diff = diff_schemas(live=live, stored=stored)
+diff = diff_schemas(live=catalog.schemas[0], stored=stored)
+
+# Generate SQL to bring live in line with stored
+sql = schema_diff_to_sql("my_catalog", diff, stored_schema=stored, allow_drop=False)
+print(sql)
 ```
 
 ## Development

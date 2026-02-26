@@ -2,7 +2,7 @@
 
 ## Project
 
-`databricks-schema` — CLI + Python library that extracts Databricks Unity Catalog schemas to YAML or JSON files (one file per schema). Pydantic v2 models serve as the intermediate representation for future bidirectional sync.
+`databricks-schema` — CLI + Python library that extracts, diffs, and generates SQL for Databricks Unity Catalog schemas stored as YAML or JSON files (one file per schema). Pydantic v2 models serve as the intermediate representation for future bidirectional sync.
 
 ## Key commands
 
@@ -22,13 +22,15 @@ databricks_schema/
   extractor.py   # CatalogExtractor — wraps databricks-sdk
   yaml_io.py     # schema/catalog to/from YAML and JSON; _strip_empty removes None + empty collections
   diff.py        # diff_schemas / diff_catalog_with_dir; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
-  cli.py         # argparse CLI: extract, diff, list-catalogs, list-schemas
+  sql_gen.py     # schema_diff_to_sql — pure SQL generation from SchemaDiff; no SDK/IO
+  cli.py         # argparse CLI: extract, diff, generate-sql, list-catalogs, list-schemas
   __init__.py    # public re-exports
 tests/
   test_models.py
   test_extractor.py  # all SDK calls mocked with MagicMock
   test_yaml_io.py
   test_diff.py       # pure model comparison, no SDK calls
+  test_sql_gen.py    # pure SQL generation tests, no SDK calls
 ```
 
 ## Conventions
@@ -53,3 +55,8 @@ tests/
 - `storage_location` is opt-in via `--storage-location` flag (excluded by default)
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)
+- `generate-sql` auto-detects format from files; exits 2 on mixed YAML+JSON or empty directory
+- `generate-sql` destructive statements commented out by default; `--allow-drop` emits real DROPs
+- `sql_gen.py` is pure (no SDK, no I/O); diff direction: `FieldChange.old` = stored (target), `.new` = live
+- FK refs in SQL use same catalog as the source table (`ref_schema` + `ref_table` from model)
+- Unsupported field changes (`table_type`) emit `-- TODO: unsupported change: …` comments
