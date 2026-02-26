@@ -11,12 +11,27 @@ version = "0.5.0"
 description = "Databricks Unity Catalog schema extractor"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "frizzleqq" }]
+keywords = ["databricks", "unity-catalog", "schema", "sql"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     # >=0.64.0 as we use 'entity_tag_assignments'
     "databricks-sdk>=0.64.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/frizzleqq/databricks-schema"
+Issues = "https://github.com/frizzleqq/databricks-schema/issues"
 
 [project.scripts]
 databricks-schema = "databricks_schema.cli:main"
