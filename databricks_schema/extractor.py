@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
@@ -36,7 +35,7 @@ class CatalogExtractor:
         self,
         catalog_name: str,
         schema_filter: list[str] | None = None,
-        include_storage_location: bool = False,
+        include_metadata: bool = False,
         include_tags: bool = True,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
@@ -45,15 +44,13 @@ class CatalogExtractor:
                 continue
             if schema_filter and schema_name not in schema_filter:
                 continue
-            yield self._extract_schema(
-                catalog_name, sdk_schema, include_storage_location, include_tags
-            )
+            yield self._extract_schema(catalog_name, sdk_schema, include_metadata, include_tags)
 
     def extract_catalog(
         self,
         catalog_name: str,
         schema_filter: list[str] | None = None,
-        include_storage_location: bool = False,
+        include_metadata: bool = False,
         include_tags: bool = True,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
@@ -63,7 +60,7 @@ class CatalogExtractor:
             self.iter_schemas(
                 catalog_name,
                 schema_filter,
-                include_storage_location,
+                include_metadata,
                 include_tags,
             )
         )
@@ -79,7 +76,7 @@ class CatalogExtractor:
         self,
         catalog_name: str,
         sdk_schema,
-        include_storage_location: bool = False,
+        include_metadata: bool = False,
         include_tags: bool = True,
     ) -> Schema:
         schema_name = sdk_schema.name or ""
@@ -94,7 +91,7 @@ class CatalogExtractor:
 
         def extract_one(sdk_table) -> Table:
             return self._extract_table(
-                catalog_name, schema_name, sdk_table, include_storage_location, include_tags
+                catalog_name, schema_name, sdk_table, include_metadata, include_tags
             )
 
         if self.max_workers > 1 and len(sdk_tables) > 1:
@@ -106,7 +103,7 @@ class CatalogExtractor:
         return Schema(
             name=schema_name,
             comment=getattr(sdk_schema, "comment", None),
-            owner=getattr(sdk_schema, "owner", None),
+            owner=getattr(sdk_schema, "owner", None) if include_metadata else None,
             tables=tables,
             tags=schema_tags,
         )
@@ -116,7 +113,7 @@ class CatalogExtractor:
         catalog_name: str,
         schema_name: str,
         sdk_table,
-        include_storage_location: bool = False,
+        include_metadata: bool = False,
         include_tags: bool = True,
     ) -> Table:
         table_name = sdk_table.name or ""
@@ -195,26 +192,17 @@ class CatalogExtractor:
                     )
                 )
 
-        # created_at is a Unix timestamp in milliseconds
-        created_at_ms = getattr(sdk_table, "created_at", None)
-        created_at = (
-            datetime.fromtimestamp(created_at_ms / 1000, tz=UTC)
-            if created_at_ms is not None
-            else None
-        )
-
         table_name = full_name.split(".")[-1]
         return Table(
             name=table_name,
             table_type=getattr(sdk_table, "table_type", None),
             comment=getattr(sdk_table, "comment", None),
-            owner=getattr(sdk_table, "owner", None),
-            created_at=created_at,
+            owner=getattr(sdk_table, "owner", None) if include_metadata else None,
             columns=columns,
             primary_key=primary_key,
             foreign_keys=foreign_keys,
             tags=table_tags,
             storage_location=(
-                getattr(sdk_table, "storage_location", None) if include_storage_location else None
+                getattr(sdk_table, "storage_location", None) if include_metadata else None
             ),
         )

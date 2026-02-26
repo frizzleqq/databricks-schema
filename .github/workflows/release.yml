@@ -7,8 +7,10 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       contents: write  # required to upload assets to the release
+      id-token: write  # required for OIDC trusted publishing to PyPI
 
     steps:
       - uses: actions/checkout@v4
@@ -43,3 +45,6 @@ jobs:
         run: gh release upload "${{ github.ref_name }}" dist/* --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always

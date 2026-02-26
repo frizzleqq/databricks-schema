@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from databricks.sdk.service.catalog import TableType
 from pydantic import BaseModel, Field
 
@@ -32,7 +30,6 @@ class Table(BaseModel):
     table_type: TableType | None = None
     comment: str | None = None
     owner: str | None = None
-    created_at: datetime | None = None
     tags: dict[str, str] = Field(default_factory=dict)
     storage_location: str | None = None
     columns: list[Column] = Field(default_factory=list)

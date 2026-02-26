@@ -108,7 +108,7 @@ class TestSchemaModified:
     def test_owner_change(self):
         stored = _schema("main", owner="alice")
         live = _schema("main", owner="bob")
-        sd = diff_schemas(live, stored)
+        sd = diff_schemas(live, stored, include_metadata=True)
         sql = schema_diff_to_sql("prod", sd, stored)
         assert "ALTER SCHEMA `prod`.`main` SET OWNER TO `alice`;" in sql
 
@@ -224,7 +224,7 @@ class TestTableModified:
     def test_owner_change(self):
         stored = _schema("main", tables=[_table("users", owner="alice")])
         live = _schema("main", tables=[_table("users", owner="bob")])
-        sd = diff_schemas(live, stored)
+        sd = diff_schemas(live, stored, include_metadata=True)
         sql = schema_diff_to_sql("prod", sd, stored)
         assert "ALTER TABLE `prod`.`main`.`users` SET OWNER TO `alice`;" in sql
 

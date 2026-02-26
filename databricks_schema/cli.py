@@ -74,7 +74,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         catalog_obj = extractor.extract_catalog(
             catalog_name=args.catalog,
             schema_filter=args.schema,
-            include_storage_location=args.storage_location,
+            include_metadata=args.include_metadata,
             include_tags=not args.no_tags,
         )
         print(serializer(catalog_obj.schemas[0]))
@@ -86,7 +86,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     for s in extractor.iter_schemas(
         catalog_name=args.catalog,
         schema_filter=args.schema,
-        include_storage_location=args.storage_location,
+        include_metadata=args.include_metadata,
         include_tags=not args.no_tags,
     ):
         out_file = output_dir / f"{s.name}{ext}"
@@ -120,6 +120,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
     catalog_obj = extractor.extract_catalog(
         catalog_name=args.catalog,
         schema_filter=args.schema,
+        include_metadata=args.include_metadata,
         include_tags=not args.no_tags,
     )
 
@@ -128,6 +129,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
         schema_dir,
         schema_names=frozenset(args.schema) if args.schema else None,
         fmt=fmt,
+        include_metadata=args.include_metadata,
     )
 
     if not result.has_changes:
@@ -189,6 +191,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
     catalog_obj = extractor.extract_catalog(
         catalog_name=args.catalog,
         schema_filter=args.schema,
+        include_metadata=args.include_metadata,
         include_tags=not args.no_tags,
     )
 
@@ -200,7 +203,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         if name not in live:
             sd: SchemaDiff = SchemaDiff(name=name, status="removed")
         else:
-            sd = diff_schemas(live[name], stored_schema)
+            sd = diff_schemas(live[name], stored_schema, args.include_metadata)
 
         if not sd.has_changes:
             continue
@@ -277,10 +280,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output directory for per-schema YAML files",
     )
     extract_p.add_argument(
-        "--storage-location",
+        "--include-metadata",
         action="store_true",
-        dest="storage_location",
-        help="Include storage_location in output",
+        dest="include_metadata",
+        help="Include additional metadata in output (owner, storage_location)",
     )
     extract_p.add_argument(
         "--no-tags",
@@ -324,6 +327,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="no_tags",
         help="Skip tag lookups (faster, omits tags from comparison)",
+    )
+    diff_p.add_argument(
+        "--include-metadata",
+        action="store_true",
+        dest="include_metadata",
+        help="Include additional metadata in comparison (owner, storage_location)",
     )
     diff_p.add_argument(
         "--workers",
@@ -370,6 +379,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="no_tags",
         help="Skip tag lookups (faster, omits tags from comparison)",
+    )
+    gen_sql_p.add_argument(
+        "--include-metadata",
+        action="store_true",
+        dest="include_metadata",
+        help="Include additional metadata in comparison (owner, storage_location)",
     )
     gen_sql_p.add_argument(
         "--workers",

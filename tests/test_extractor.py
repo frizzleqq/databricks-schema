@@ -1,5 +1,4 @@
 import logging
-from datetime import UTC
 from unittest.mock import MagicMock
 
 from databricks.sdk.errors import NotFound
@@ -33,7 +32,6 @@ def _make_sdk_table(
     constraints=None,
     comment=None,
     owner=None,
-    created_at=None,
 ):
     t = MagicMock()
     t.name = name
@@ -42,7 +40,6 @@ def _make_sdk_table(
     t.columns = columns or []
     t.table_constraints = constraints or []
     t.owner = owner
-    t.created_at = created_at
     t.table_type = TableType(table_type_val) if table_type_val else None
     return t
 
@@ -187,7 +184,7 @@ class TestCatalogExtractor:
         assert fk.ref_columns == ["id"]
         assert fk.columns == ["user_id"]
 
-    def test_owner_and_created_at_extracted(self):
+    def test_owner_extracted_with_metadata(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -199,16 +196,31 @@ class TestCatalogExtractor:
         s.owner = None
         client.schemas.list.return_value = [s]
 
-        created_at_ms = 1_700_000_000_000  # milliseconds
-        sdk_table = _make_sdk_table("t", owner="alice", created_at=created_at_ms)
+        sdk_table = _make_sdk_table("t", owner="alice")
+        client.tables.list.return_value = [sdk_table]
+
+        catalog = extractor.extract_catalog("mycat", include_metadata=True)
+        table = catalog.schemas[0].tables[0]
+        assert table.owner == "alice"
+
+    def test_owner_excluded_without_metadata(self):
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        sdk_table = _make_sdk_table("t", owner="alice")
         client.tables.list.return_value = [sdk_table]
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
-        assert table.owner == "alice"
-        assert table.created_at is not None
-        assert table.created_at.tzinfo == UTC
-        assert int(table.created_at.timestamp() * 1000) == created_at_ms
+        assert table.owner is None
 
     def test_schema_owner_extracted(self):
         extractor, client = self._extractor()
@@ -223,7 +235,7 @@ class TestCatalogExtractor:
         client.schemas.list.return_value = [s]
         client.tables.list.return_value = []
 
-        catalog = extractor.extract_catalog("mycat")
+        catalog = extractor.extract_catalog("mycat", include_metadata=True)
         assert catalog.schemas[0].owner == "data_team"
 
     def test_table_type_extracted(self):

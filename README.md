@@ -39,13 +39,13 @@ tables:
       domain: identity
     columns:
       - name: id
-        data_type: BIGINT
+        data_type: bigint
         nullable: false
         comment: Primary key
       - name: email
-        data_type: STRING
+        data_type: string
       - name: org_id
-        data_type: BIGINT
+        data_type: bigint
     primary_key:
       name: pk_users
       columns:
@@ -123,6 +123,12 @@ Skip tag lookups for faster extraction (tags will be absent from output):
 databricks-schema extract <catalog> --output-dir ./schemas/ --no-tags
 ```
 
+Include additional metadata (`owner`, `storage_location`) in the output:
+
+```bash
+databricks-schema extract <catalog> --output-dir ./schemas/ --include-metadata
+```
+
 Control the number of parallel workers (default: 4):
 
 ```bash
@@ -149,14 +155,19 @@ Skip tag lookups during comparison:
 databricks-schema diff <catalog> ./schemas/ --no-tags
 ```
 
+Include additional metadata (`owner`, `storage_location`) in the comparison:
+
+```bash
+databricks-schema diff <catalog> ./schemas/ --include-metadata
+```
+
 Exits with code `0` if no differences are found, `1` if there are — making it suitable for CI pipelines. Output example:
 
 ```
 ~ Schema: main [MODIFIED]
   ~ Table: users [MODIFIED]
-      owner: 'alice' -> 'bob'
-    ~ Column: email [MODIFIED]
-        data_type: 'STRING' -> 'VARCHAR(255)'
+    ~ Column: score [MODIFIED]
+        data_type: 'int' -> 'double'
     + Column: phone [ADDED]
   + Table: events [ADDED]
 - Schema: legacy [REMOVED]
@@ -196,6 +207,12 @@ Skip tag lookups for faster comparison:
 databricks-schema generate-sql <catalog> ./schemas/ --no-tags
 ```
 
+Include additional metadata (`owner`, `storage_location`) in the comparison:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --include-metadata
+```
+
 ### `list-catalogs`
 
 List all accessible catalogs:
@@ -225,6 +242,9 @@ catalog = extractor.extract_catalog("my_catalog", schema_filter=["main", "raw"])
 
 # Skip tag lookups for faster extraction
 catalog = extractor.extract_catalog("my_catalog", include_tags=False)
+
+# Include additional metadata (owner, storage_location)
+catalog = extractor.extract_catalog("my_catalog", include_metadata=True)
 
 # Serialise to YAML
 yaml_text = catalog_to_yaml(catalog)

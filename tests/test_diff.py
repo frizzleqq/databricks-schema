@@ -53,11 +53,17 @@ class TestDiffSchemas:
     def test_owner_changed(self):
         stored = _schema(owner="alice")
         live = _schema(owner="bob")
-        result = diff_schemas(live=live, stored=stored)
+        result = diff_schemas(live=live, stored=stored, include_metadata=True)
         assert result.status == "modified"
         assert result.changes[0].field == "owner"
         assert result.changes[0].old == "alice"
         assert result.changes[0].new == "bob"
+
+    def test_owner_ignored_without_metadata(self):
+        stored = _schema(owner="alice")
+        live = _schema(owner="bob")
+        result = diff_schemas(live=live, stored=stored)
+        assert result.status == "unchanged"
 
     def test_tags_changed(self):
         stored = _schema(tags={"env": "prod"})
