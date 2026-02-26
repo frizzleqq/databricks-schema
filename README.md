@@ -39,13 +39,13 @@ tables:
       domain: identity
     columns:
       - name: id
-        data_type: BIGINT
+        data_type: bigint
         nullable: false
         comment: Primary key
       - name: email
-        data_type: STRING
+        data_type: string
       - name: org_id
-        data_type: BIGINT
+        data_type: bigint
     primary_key:
       name: pk_users
       columns:
@@ -166,8 +166,8 @@ Exits with code `0` if no differences are found, `1` if there are — making it 
 ```
 ~ Schema: main [MODIFIED]
   ~ Table: users [MODIFIED]
-    ~ Column: email [MODIFIED]
-        data_type: 'STRING' -> 'VARCHAR(255)'
+    ~ Column: score [MODIFIED]
+        data_type: 'int' -> 'double'
     + Column: phone [ADDED]
   + Table: events [ADDED]
 - Schema: legacy [REMOVED]
