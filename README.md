@@ -4,7 +4,7 @@ A CLI tool and Python library that uses the Databricks SDK to extract and diff U
 
 ## Overview
 
-Extract a catalog to YAML files, then diff those files against any catalog — the same one later to detect drift, or a different one to compare environments (e.g. prod vs test):
+Extract a catalog to YAML files, then diff those files against a catalog — the same one to detect drift or a different one to compare environments (e.g. prod vs test):
 
 ```bash
 # 1. Find the catalog you want to snapshot
@@ -21,6 +21,44 @@ databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations
 ```
 
 The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
+
+## Output Format
+
+Each schema is written to `{output-dir}/{schema-name}.yaml`. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
+
+```yaml
+name: main
+comment: Main production schema
+tags:
+  env: prod
+tables:
+  - name: users
+    table_type: MANAGED
+    comment: User accounts
+    tags:
+      domain: identity
+    columns:
+      - name: id
+        data_type: BIGINT
+        nullable: false
+        comment: Primary key
+      - name: email
+        data_type: STRING
+      - name: org_id
+        data_type: BIGINT
+    primary_key:
+      name: pk_users
+      columns:
+        - id
+    foreign_keys:
+      - name: fk_org
+        columns:
+          - org_id
+        ref_schema: orgs
+        ref_table: organizations
+        ref_columns:
+          - id
+```
 
 ## Installation
 
@@ -158,21 +196,6 @@ Skip tag lookups for faster comparison:
 databricks-schema generate-sql <catalog> ./schemas/ --no-tags
 ```
 
-**SQL generated per diff type:**
-
-| Situation | SQL emitted |
-|---|---|
-| Schema in local files, missing from live | `CREATE SCHEMA IF NOT EXISTS …` + owner/comment/tags + `CREATE TABLE` for each table |
-| Schema in live, missing from local files | `-- DROP SCHEMA … CASCADE;` (or real with `--allow-drop`) |
-| Table in local files, missing from live | `CREATE TABLE IF NOT EXISTS … (cols…)` + owner/tags |
-| Table in live, missing from local files | `-- DROP TABLE …;` (or real with `--allow-drop`) |
-| Column in local files, missing from live | `ALTER TABLE … ADD COLUMN …` |
-| Column in live, missing from local files | `-- ALTER TABLE … DROP COLUMN …;` (or real with `--allow-drop`) |
-| Schema/table/column field changed | `COMMENT ON …`, `SET OWNER TO`, `SET TAGS`, `UNSET TAGS`, `ALTER COLUMN …` |
-| Primary key changed | `DROP PRIMARY KEY IF EXISTS` + `ADD CONSTRAINT … PRIMARY KEY` |
-| Foreign key changed | `DROP FOREIGN KEY IF EXISTS` / `ADD CONSTRAINT … FOREIGN KEY … REFERENCES …` |
-| `table_type` changed | `-- TODO: unsupported change: table_type …` |
-
 ### `list-catalogs`
 
 List all accessible catalogs:
@@ -187,44 +210,6 @@ List schemas in a catalog:
 
 ```bash
 databricks-schema list-schemas <catalog>
-```
-
-## Output Format
-
-Each schema is written to `{output-dir}/{schema-name}.yaml`. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
-
-```yaml
-name: main
-comment: Main production schema
-tags:
-  env: prod
-tables:
-  - name: users
-    table_type: MANAGED
-    comment: User accounts
-    tags:
-      domain: identity
-    columns:
-      - name: id
-        data_type: BIGINT
-        nullable: false
-        comment: Primary key
-      - name: email
-        data_type: STRING
-      - name: org_id
-        data_type: BIGINT
-    primary_key:
-      name: pk_users
-      columns:
-        - id
-    foreign_keys:
-      - name: fk_org
-        columns:
-          - org_id
-        ref_schema: orgs
-        ref_table: organizations
-        ref_columns:
-          - id
 ```
 
 ## Python Library Usage
