@@ -1,6 +1,6 @@
 # databricks-schema
 
-A CLI tool and Python library for extracting, diffing, and generating SQL for Databricks Unity Catalog schemas stored as YAML files.
+A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
 ## Overview
 
