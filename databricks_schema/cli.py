@@ -8,7 +8,14 @@ from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 
-from databricks_schema.dbml_gen import schema_to_dbml, schemas_to_dbml
+try:
+    from databricks_schema.dbml_gen import schemas_to_dbml as _schemas_to_dbml
+
+    _DBML_AVAILABLE = True
+except ImportError as _dbml_err:
+    _schemas_to_dbml = None  # type: ignore[assignment]
+    _DBML_AVAILABLE = False
+    _DBML_ERROR = str(_dbml_err)
 from databricks_schema.diff import CatalogDiff, SchemaDiff, diff_catalog_with_dir, diff_schemas
 from databricks_schema.extractor import CatalogExtractor
 from databricks_schema.models import Schema
@@ -49,21 +56,18 @@ def _add_connection_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    """Extract Unity Catalog schemas to YAML, JSON, or DBML files."""
+    """Extract Unity Catalog schemas to YAML or JSON files."""
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
+
+    print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
     if args.fmt == "json":
         serializer = schema_to_json
         ext = ".json"
-    elif args.fmt == "dbml":
-        serializer = schema_to_dbml
-        ext = ".dbml"
     else:
         serializer = schema_to_yaml
         ext = ".yaml"
-
-    print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
     if args.output_dir is None:
         schema_filter_set = set(args.schema) if args.schema else None
@@ -88,7 +92,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         print(serializer(catalog_obj.schemas[0]))
         return
 
-    output_dir: Path = args.output_dir
+    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     for s in extractor.iter_schemas(
@@ -247,6 +251,10 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
 
 def _cmd_convert_dbml(args: argparse.Namespace) -> None:
     """Convert stored YAML/JSON schemas to DBML format."""
+    if not _DBML_AVAILABLE:
+        print(f"Error: {_DBML_ERROR}", file=sys.stderr)
+        sys.exit(1)
+
     schema_dir: Path = args.schema_dir
     if not schema_dir.is_dir():
         print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
@@ -276,16 +284,15 @@ def _cmd_convert_dbml(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     include_tags = not args.no_tags
+    content = _schemas_to_dbml(schemas, include_tags=include_tags)
 
-    if args.output_dir:
-        output_dir: Path = args.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for schema in schemas:
-            out_file = output_dir / f"{schema.name}.dbml"
-            out_file.write_text(schema_to_dbml(schema, include_tags=include_tags), encoding="utf-8")
-            print(f"  Wrote {out_file}", file=sys.stderr)
+    if args.output:
+        output_file: Path = args.output
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(content, encoding="utf-8")
+        print(f"  Wrote {output_file}", file=sys.stderr)
     else:
-        print(schemas_to_dbml(schemas, include_tags=include_tags), end="")
+        print(content, end="")
 
 
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
@@ -345,7 +352,7 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_p.add_argument(
         "--format",
         "-f",
-        choices=["yaml", "json", "dbml"],
+        choices=["yaml", "json"],
         default="yaml",
         dest="fmt",
         help="Output format (default: yaml)",
@@ -456,12 +463,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
     )
     convert_dbml_p.add_argument(
-        "--output-dir",
+        "--output",
         "-o",
         type=Path,
-        dest="output_dir",
-        metavar="DIR",
-        help="Write one .dbml file per schema instead of printing to stdout",
+        dest="output",
+        metavar="FILE",
+        help="Write combined DBML to FILE instead of printing to stdout",
     )
     convert_dbml_p.add_argument(
         "--schema",

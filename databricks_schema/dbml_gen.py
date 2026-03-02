@@ -1,84 +1,101 @@
 from __future__ import annotations
 
-from databricks_schema.models import Column, ForeignKey, Schema, Table
+try:
+    from pydbml import Database
+    from pydbml.classes import Column as PyColumn
+    from pydbml.classes import Index as PyIndex
+    from pydbml.classes import Reference as PyReference
+    from pydbml.classes import Table as PyTable
+    from pydbml.classes import TableGroup as PyTableGroup
+except ImportError as exc:
+    raise ImportError(
+        "pydbml is required for DBML output. Install it with: pip install 'databricks-schema[dbml]'"
+    ) from exc
+
+from databricks_schema.models import ForeignKey, Schema, Table
 
 
-def _q(name: str) -> str:
-    """Double-quote a DBML identifier."""
-    return f'"{name}"'
-
-
-def _esc(s: str) -> str:
-    """Escape single quotes for DBML note strings."""
-    return s.replace("'", "\\'")
-
-
-def _col_def(col: Column, is_pk: bool) -> str:
-    """Generate a single DBML column definition line."""
-    attrs: list[str] = []
-    if is_pk:
-        attrs.append("pk")
-    if not col.nullable:
-        attrs.append("not null")
-    if col.comment:
-        attrs.append(f"note: '{_esc(col.comment)}'")
-    attr_str = f" [{', '.join(attrs)}]" if attrs else ""
-    return f"  {_q(col.name)} {col.data_type}{attr_str}"
-
-
-def _table_block(schema_name: str, table: Table, include_tags: bool) -> str:
-    """Generate the full DBML Table block for a single table."""
-    lines: list[str] = [f"Table {_q(schema_name)}.{_q(table.name)} {{"]
-
-    pk_cols: set[str] = set()
+def _build_py_table(schema_name: str, table: Table, include_tags: bool) -> PyTable:
+    """Convert a Schema Table to a pydbml Table object."""
+    single_pk_col: str | None = None
     if table.primary_key and len(table.primary_key.columns) == 1:
-        pk_cols = {table.primary_key.columns[0]}
+        single_pk_col = table.primary_key.columns[0]
 
-    for col in table.columns:
-        lines.append(_col_def(col, col.name in pk_cols))
-
-    # Composite PK via indexes block
-    if table.primary_key and len(table.primary_key.columns) > 1:
-        pk = table.primary_key
-        col_refs = ", ".join(_q(c) for c in pk.columns)
-        name_attr = f", name: '{_esc(pk.name)}'" if pk.name else ""
-        lines.append("")
-        lines.append("  indexes {")
-        lines.append(f"    ({col_refs}) [pk{name_attr}]")
-        lines.append("  }")
-
-    # Note: table comment + optional tags
     note_parts: list[str] = []
     if table.comment:
         note_parts.append(table.comment)
     if include_tags and table.tags:
-        tag_str = ", ".join(f"{k}={v}" for k, v in table.tags.items())
-        note_parts.append(f"tags: {tag_str}")
-    if note_parts:
-        lines.append("")
-        lines.append(f"  Note: '{_esc(chr(10).join(note_parts))}'")
+        note_parts.append("tags: " + ", ".join(f"{k}={v}" for k, v in table.tags.items()))
 
-    lines.append("}")
-    return "\n".join(lines)
+    py_table = PyTable(
+        name=table.name,
+        schema=schema_name,
+        note="\n".join(note_parts) if note_parts else None,
+    )
+
+    for col in table.columns:
+        py_table.add_column(
+            PyColumn(
+                name=col.name,
+                type=col.data_type,
+                pk=col.name == single_pk_col,
+                not_null=not col.nullable,
+                note=col.comment or None,
+            )
+        )
+
+    # Composite PK via Index block
+    if table.primary_key and len(table.primary_key.columns) > 1:
+        pk = table.primary_key
+        py_table.add_index(
+            PyIndex(
+                subjects=[py_table[c] for c in pk.columns],
+                pk=True,
+                name=pk.name or None,
+            )
+        )
+
+    return py_table
 
 
-def _ref_lines(schema_name: str, table_name: str, fks: list[ForeignKey]) -> list[str]:
-    """Generate DBML Ref lines for all foreign keys of a table."""
-    refs: list[str] = []
+def _add_refs(
+    db: Database,
+    src_table: PyTable,
+    fks: list[ForeignKey],
+    table_registry: dict[str, PyTable],
+) -> None:
+    """Build and add pydbml Reference objects to the database for all FKs of a table.
+
+    For referenced tables not already in the registry (cross-schema refs), a placeholder
+    PyTable is created to satisfy pydbml's requirement that columns know their parent table.
+    Placeholders are not added to the database so they do not appear in the DBML output.
+    Source FK columns that are not yet on src_table are also added as placeholders.
+    """
     for fk in fks:
-        name_part = f" {_q(fk.name)}" if fk.name else ""
-        if len(fk.columns) == 1:
-            src = f"{_q(schema_name)}.{_q(table_name)}.{_q(fk.columns[0])}"
-        else:
-            col_list = ", ".join(_q(c) for c in fk.columns)
-            src = f"{_q(schema_name)}.{_q(table_name)}.({col_list})"
-        if len(fk.ref_columns) == 1:
-            ref = f"{_q(fk.ref_schema)}.{_q(fk.ref_table)}.{_q(fk.ref_columns[0])}"
-        else:
-            ref_list = ", ".join(_q(c) for c in fk.ref_columns)
-            ref = f"{_q(fk.ref_schema)}.{_q(fk.ref_table)}.({ref_list})"
-        refs.append(f"Ref{name_part}: {src} > {ref}")
-    return refs
+        existing_src_cols = {c.name for c in src_table.columns}
+        for col_name in fk.columns:
+            if col_name not in existing_src_cols:
+                src_table.add_column(PyColumn(name=col_name, type="unknown"))
+                existing_src_cols.add(col_name)
+
+        ref_key = f"{fk.ref_schema}.{fk.ref_table}"
+        if ref_key not in table_registry:
+            placeholder = PyTable(name=fk.ref_table, schema=fk.ref_schema)
+            table_registry[ref_key] = placeholder
+        ref_table = table_registry[ref_key]
+        existing_cols = {c.name for c in ref_table.columns}
+        for col_name in fk.ref_columns:
+            if col_name not in existing_cols:
+                ref_table.add_column(PyColumn(name=col_name, type="unknown"))
+                existing_cols.add(col_name)
+        db.add(
+            PyReference(
+                type=">",
+                col1=[src_table[c] for c in fk.columns],
+                col2=[ref_table[c] for c in fk.ref_columns],
+                name=fk.name or None,
+            )
+        )
 
 
 def schema_to_dbml(schema: Schema, include_tags: bool = True) -> str:
@@ -94,25 +111,30 @@ def schema_to_dbml(schema: Schema, include_tags: bool = True) -> str:
     Returns:
         DBML string, or empty string if the schema has no tables.
     """
-    blocks: list[str] = []
-    refs: list[str] = []
-
-    for table in schema.tables:
-        blocks.append(_table_block(schema.name, table, include_tags))
-        refs.extend(_ref_lines(schema.name, table.name, table.foreign_keys))
-
-    if not blocks:
+    if not schema.tables:
         return ""
 
-    all_parts = blocks + refs
-    return "\n\n".join(all_parts) + "\n"
+    db = Database()
+    table_registry: dict[str, PyTable] = {}
+
+    for table in schema.tables:
+        py_table = _build_py_table(schema.name, table, include_tags)
+        db.add(py_table)
+        table_registry[f"{schema.name}.{table.name}"] = py_table
+
+    for table in schema.tables:
+        _add_refs(
+            db, table_registry[f"{schema.name}.{table.name}"], table.foreign_keys, table_registry
+        )
+
+    return db.dbml + "\n"
 
 
 def schemas_to_dbml(schemas: list[Schema], include_tags: bool = True) -> str:
     """Convert multiple schemas to a single combined DBML string.
 
-    When more than one schema is present, wraps each schema's tables in a
-    TableGroup block for organisation in tools like dbdiagram.io.
+    When more than one schema is present, a TableGroup is added per schema
+    for visual organisation in tools like dbdiagram.io.
 
     Args:
         schemas: List of schemas to convert.
@@ -125,26 +147,31 @@ def schemas_to_dbml(schemas: list[Schema], include_tags: bool = True) -> str:
     if not non_empty:
         return ""
 
-    if len(non_empty) == 1:
-        return schema_to_dbml(non_empty[0], include_tags)
-
-    parts: list[str] = []
-    all_refs: list[str] = []
+    db = Database()
+    table_registry: dict[str, PyTable] = {}
 
     for schema in non_empty:
-        schema_blocks: list[str] = []
         for table in schema.tables:
-            schema_blocks.append(_table_block(schema.name, table, include_tags))
-            all_refs.extend(_ref_lines(schema.name, table.name, table.foreign_keys))
+            py_table = _build_py_table(schema.name, table, include_tags)
+            db.add(py_table)
+            table_registry[f"{schema.name}.{table.name}"] = py_table
 
-        # Emit table blocks for this schema
-        parts.append("\n\n".join(schema_blocks))
+    for schema in non_empty:
+        for table in schema.tables:
+            _add_refs(
+                db,
+                table_registry[f"{schema.name}.{table.name}"],
+                table.foreign_keys,
+                table_registry,
+            )
 
-        # TableGroup to organise by schema
-        table_refs = "\n".join(f"  {_q(schema.name)}.{_q(t.name)}" for t in schema.tables)
-        parts.append(f"TableGroup {_q(schema.name)} {{\n{table_refs}\n}}")
+    if len(non_empty) > 1:
+        for schema in non_empty:
+            db.add(
+                PyTableGroup(
+                    name=schema.name,
+                    items=[table_registry[f"{schema.name}.{t.name}"] for t in schema.tables],
+                )
+            )
 
-    if all_refs:
-        parts.append("\n".join(all_refs))
-
-    return "\n\n".join(parts) + "\n"
+    return db.dbml + "\n"

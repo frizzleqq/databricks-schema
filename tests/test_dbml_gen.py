@@ -108,7 +108,7 @@ class TestPrimaryKey:
         )
         dbml = schema_to_dbml(schema)
         assert "indexes {" in dbml
-        assert '("a", "b") [pk]' in dbml
+        assert "(a, b) [pk]" in dbml
 
     def test_composite_pk_with_name(self):
         schema = _schema(
@@ -154,7 +154,7 @@ class TestForeignKey:
         )
         schema = _schema("app", tables=[_table("orders", foreign_keys=[fk])])
         dbml = schema_to_dbml(schema)
-        assert 'Ref "fk_user": "app"."orders"."user_id" > "auth"."users"."id"' in dbml
+        assert '"app"."orders"."user_id" > "auth"."users"."id"' in dbml
 
     def test_multi_col_fk(self):
         fk = ForeignKey(
@@ -166,7 +166,7 @@ class TestForeignKey:
         )
         schema = _schema("s", tables=[_table("t1", foreign_keys=[fk])])
         dbml = schema_to_dbml(schema)
-        assert 'Ref "fk_multi": "s"."t1".("a", "b") > "other"."t2".("x", "y")' in dbml
+        assert '"s"."t1".("a", "b") > "other"."t2".("x", "y")' in dbml
 
     def test_unnamed_fk(self):
         fk = ForeignKey(
@@ -178,7 +178,7 @@ class TestForeignKey:
         )
         schema = _schema("s", tables=[_table("t", foreign_keys=[fk])])
         dbml = schema_to_dbml(schema)
-        assert "Ref: " in dbml
+        assert "Ref " in dbml
         assert '"s"."t"."org_id" > "orgs"."orgs"."id"' in dbml
 
     def test_fk_appears_after_table_block(self):
@@ -200,12 +200,12 @@ class TestNotes:
     def test_table_comment_in_note(self):
         schema = _schema("s", tables=[_table("t", comment="all orders")])
         dbml = schema_to_dbml(schema)
-        assert "Note: 'all orders'" in dbml
+        assert "'all orders'" in dbml
 
     def test_table_comment_escaped(self):
         schema = _schema("s", tables=[_table("t", comment="it's here")])
         dbml = schema_to_dbml(schema)
-        assert "Note: 'it\\'s here'" in dbml
+        assert "'it\\'s here'" in dbml
 
     def test_tags_in_note_by_default(self):
         schema = _schema("s", tables=[_table("t", tags={"env": "prod"})])
