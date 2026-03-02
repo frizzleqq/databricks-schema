@@ -8,6 +8,7 @@ from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 
+from databricks_schema.dbml_gen import schema_to_dbml, schemas_to_dbml
 from databricks_schema.diff import CatalogDiff, SchemaDiff, diff_catalog_with_dir, diff_schemas
 from databricks_schema.extractor import CatalogExtractor
 from databricks_schema.models import Schema
@@ -48,12 +49,19 @@ def _add_connection_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    """Extract Unity Catalog schemas to YAML or JSON files."""
+    """Extract Unity Catalog schemas to YAML, JSON, or DBML files."""
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
 
-    serializer = schema_to_json if args.fmt == "json" else schema_to_yaml
-    ext = ".json" if args.fmt == "json" else ".yaml"
+    if args.fmt == "json":
+        serializer = schema_to_json
+        ext = ".json"
+    elif args.fmt == "dbml":
+        serializer = schema_to_dbml
+        ext = ".dbml"
+    else:
+        serializer = schema_to_yaml
+        ext = ".yaml"
 
     print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
@@ -237,6 +245,49 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
             print()
 
 
+def _cmd_convert_dbml(args: argparse.Namespace) -> None:
+    """Convert stored YAML/JSON schemas to DBML format."""
+    schema_dir: Path = args.schema_dir
+    if not schema_dir.is_dir():
+        print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
+        sys.exit(2)
+
+    yaml_files = list(schema_dir.glob("*.yaml"))
+    json_files = list(schema_dir.glob("*.json"))
+    if yaml_files and json_files:
+        print("Error: mixed YAML and JSON files in schema directory.", file=sys.stderr)
+        sys.exit(2)
+    elif not yaml_files and not json_files:
+        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
+    fmt = "json" if json_files else "yaml"
+    ext = ".json" if fmt == "json" else ".yaml"
+    loader = schema_from_json if fmt == "json" else schema_from_yaml
+
+    schema_filter_set: frozenset[str] | None = frozenset(args.schema) if args.schema else None
+    schemas: list[Schema] = []
+    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
+        if schema_filter_set is not None and schema_file.stem not in schema_filter_set:
+            continue
+        schemas.append(loader(schema_file.read_text(encoding="utf-8")))
+
+    if not schemas:
+        print("No matching schemas found.", file=sys.stderr)
+        sys.exit(2)
+
+    include_tags = not args.no_tags
+
+    if args.output_dir:
+        output_dir: Path = args.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for schema in schemas:
+            out_file = output_dir / f"{schema.name}.dbml"
+            out_file.write_text(schema_to_dbml(schema, include_tags=include_tags), encoding="utf-8")
+            print(f"  Wrote {out_file}", file=sys.stderr)
+    else:
+        print(schemas_to_dbml(schemas, include_tags=include_tags), end="")
+
+
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
     client = _make_client(args.host, args.token)
@@ -294,7 +345,7 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_p.add_argument(
         "--format",
         "-f",
-        choices=["yaml", "json"],
+        choices=["yaml", "json", "dbml"],
         default="yaml",
         dest="fmt",
         help="Output format (default: yaml)",
@@ -395,6 +446,37 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_connection_args(gen_sql_p)
     gen_sql_p.set_defaults(func=_cmd_generate_sql)
+
+    # convert-dbml
+    convert_dbml_p = subparsers.add_parser(
+        "convert-dbml",
+        help="Convert stored YAML/JSON schemas to DBML format.",
+    )
+    convert_dbml_p.add_argument(
+        "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
+    )
+    convert_dbml_p.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        dest="output_dir",
+        metavar="DIR",
+        help="Write one .dbml file per schema instead of printing to stdout",
+    )
+    convert_dbml_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    convert_dbml_p.add_argument(
+        "--no-tags",
+        action="store_true",
+        dest="no_tags",
+        help="Omit Unity Catalog tags from DBML output",
+    )
+    convert_dbml_p.set_defaults(func=_cmd_convert_dbml)
 
     # list-catalogs
     list_catalogs_p = subparsers.add_parser("list-catalogs", help="List all accessible catalogs.")

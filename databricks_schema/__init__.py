@@ -1,5 +1,6 @@
 from databricks.sdk.service.catalog import TableType
 
+from databricks_schema.dbml_gen import schema_to_dbml, schemas_to_dbml
 from databricks_schema.diff import (
     CatalogDiff,
     ColumnDiff,
@@ -43,10 +44,11 @@ __all__ = [
     "catalog_to_yaml",
     "diff_catalog_with_dir",
     "diff_schemas",
-    "schema_from_json",
     "schema_diff_to_sql",
     "schema_from_json",
     "schema_from_yaml",
+    "schema_to_dbml",
     "schema_to_json",
     "schema_to_yaml",
+    "schemas_to_dbml",
 ]
