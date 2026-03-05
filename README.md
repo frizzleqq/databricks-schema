@@ -231,6 +231,8 @@ databricks-schema list-schemas <catalog>
 
 ## Python Library Usage
 
+See also the [`examples/`](examples/) directory for standalone scripts.
+
 ```python
 from pathlib import Path
 from databricks_schema import CatalogExtractor, catalog_to_yaml, schema_from_yaml
