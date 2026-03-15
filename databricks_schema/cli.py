@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import DatabricksError, NotFound, PermissionDenied, Unauthenticated
 
 from databricks_schema.diff import (
     CatalogDiff,
@@ -539,4 +540,12 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except NotFound as e:
+        print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
+        print("Check that the catalog and schema names are correct.", file=sys.stderr)
+        sys.exit(2)
+    except (Unauthenticated, PermissionDenied, DatabricksError) as e:
+        print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(2)
