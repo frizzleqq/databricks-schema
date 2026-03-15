@@ -128,6 +128,54 @@ def diff_schemas(live: Schema, stored: Schema, include_metadata: bool = False) -
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)
 
 
+def diff_schema_dirs(
+    dir1: Path,
+    dir2: Path,
+    fmt1: Literal["yaml", "json"] = "yaml",
+    fmt2: Literal["yaml", "json"] = "yaml",
+    schema_names: frozenset[str] | None = None,
+    include_metadata: bool = False,
+) -> CatalogDiff:
+    """Compare two local directories of schema files.
+
+    dir1 is treated as the stored/baseline state (old).
+    dir2 is treated as the live/current state (new).
+
+    Schemas present in dir1 but not dir2 are reported as "removed".
+    Schemas present in dir2 but not dir1 are reported as "added".
+    Schemas present in both are compared with diff_schemas.
+
+    schema_names: if set, only files whose stem is in this set are loaded from either directory.
+    fmt1 / fmt2: file format for dir1 and dir2 respectively ("yaml" or "json").
+    """
+
+    def _load_dir(path: Path, fmt: Literal["yaml", "json"]) -> dict[str, Schema]:
+        ext = ".json" if fmt == "json" else ".yaml"
+        loader = schema_from_json if fmt == "json" else schema_from_yaml
+        schemas: dict[str, Schema] = {}
+        for f in sorted(path.glob(f"*{ext}")):
+            if schema_names is not None and f.stem not in schema_names:
+                continue
+            schema = loader(f.read_text(encoding="utf-8"))
+            schemas[schema.name] = schema
+        return schemas
+
+    stored = _load_dir(dir1, fmt1)
+    live = _load_dir(dir2, fmt2)
+
+    schema_diffs: list[SchemaDiff] = []
+    for name, stored_schema in stored.items():
+        if name not in live:
+            schema_diffs.append(SchemaDiff(name=name, status="removed"))
+        else:
+            schema_diffs.append(diff_schemas(live[name], stored_schema, include_metadata))
+    for name in live:
+        if name not in stored:
+            schema_diffs.append(SchemaDiff(name=name, status="added"))
+
+    return CatalogDiff(schemas=schema_diffs)
+
+
 def diff_catalog_with_dir(
     catalog: Catalog,
     schema_dir: Path,

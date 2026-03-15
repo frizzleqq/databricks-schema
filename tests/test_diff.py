@@ -4,6 +4,7 @@ from pathlib import Path
 
 from databricks_schema.diff import (
     diff_catalog_with_dir,
+    diff_schema_dirs,
     diff_schemas,
 )
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
@@ -246,3 +247,84 @@ class TestDiffCatalogWithDir:
         result = diff_catalog_with_dir(catalog, tmp_path, fmt="json")
         assert not result.has_changes
         assert result.schemas[0].status == "unchanged"
+
+
+class TestDiffSchemaDirs:
+    def test_no_changes(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        schema = _schema("main", tables=[_table("users", columns=[_col("id")])])
+        (d1 / "main.yaml").write_text(schema_to_yaml(schema))
+        (d2 / "main.yaml").write_text(schema_to_yaml(schema))
+        result = diff_schema_dirs(d1, d2)
+        assert not result.has_changes
+        assert result.schemas[0].status == "unchanged"
+
+    def test_schema_added_in_dir2(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        schema = _schema("main")
+        (d1 / "main.yaml").write_text(schema_to_yaml(schema))
+        (d2 / "main.yaml").write_text(schema_to_yaml(schema))
+        extra = _schema("extra")
+        (d2 / "extra.yaml").write_text(schema_to_yaml(extra))
+        result = diff_schema_dirs(d1, d2)
+        added = next(s for s in result.schemas if s.name == "extra")
+        assert added.status == "added"
+
+    def test_schema_removed_from_dir2(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        schema = _schema("main")
+        (d1 / "main.yaml").write_text(schema_to_yaml(schema))
+        result = diff_schema_dirs(d1, d2)
+        assert result.schemas[0].name == "main"
+        assert result.schemas[0].status == "removed"
+
+    def test_field_modified(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        old = _schema("main", comment="old")
+        new = _schema("main", comment="new")
+        (d1 / "main.yaml").write_text(schema_to_yaml(old))
+        (d2 / "main.yaml").write_text(schema_to_yaml(new))
+        result = diff_schema_dirs(d1, d2)
+        s = result.schemas[0]
+        assert s.status == "modified"
+        assert s.changes[0].field == "comment"
+        assert s.changes[0].old == "old"
+        assert s.changes[0].new == "new"
+
+    def test_json_format(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        schema = _schema("main", tables=[_table("t", columns=[_col("id")])])
+        (d1 / "main.json").write_text(schema_to_json(schema))
+        (d2 / "main.json").write_text(schema_to_json(schema))
+        result = diff_schema_dirs(d1, d2, fmt1="json", fmt2="json")
+        assert not result.has_changes
+
+    def test_schema_names_filter(self, tmp_path: Path):
+        d1 = tmp_path / "d1"
+        d2 = tmp_path / "d2"
+        d1.mkdir()
+        d2.mkdir()
+        main = _schema("main")
+        raw_old = _schema("raw", comment="old")
+        raw_new = _schema("raw", comment="new")
+        (d1 / "main.yaml").write_text(schema_to_yaml(main))
+        (d1 / "raw.yaml").write_text(schema_to_yaml(raw_old))
+        (d2 / "main.yaml").write_text(schema_to_yaml(main))
+        (d2 / "raw.yaml").write_text(schema_to_yaml(raw_new))
+        result = diff_schema_dirs(d1, d2, schema_names=frozenset({"main"}))
+        assert not result.has_changes

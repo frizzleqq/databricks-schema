@@ -8,10 +8,17 @@ from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 
-from databricks_schema.diff import CatalogDiff, SchemaDiff, diff_catalog_with_dir, diff_schemas
+from databricks_schema.diff import (
+    CatalogDiff,
+    SchemaDiff,
+    diff_catalog_with_dir,
+    diff_schema_dirs,
+    diff_schemas,
+)
 from databricks_schema.extractor import CatalogExtractor
 from databricks_schema.models import Schema
 from databricks_schema.sql_gen import schema_diff_to_sql
+from databricks_schema.validate import validate_schemas
 from databricks_schema.yaml_io import (
     schema_from_json,
     schema_from_yaml,
@@ -237,6 +244,83 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
             print()
 
 
+def _detect_fmt(schema_dir: Path) -> str:
+    """Auto-detect YAML or JSON format from files in a directory. Exits 2 on mixed or empty."""
+    yaml_files = list(schema_dir.glob("*.yaml"))
+    json_files = list(schema_dir.glob("*.json"))
+    if yaml_files and json_files:
+        print(f"Error: mixed YAML and JSON files in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
+    elif not yaml_files and not json_files:
+        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
+        sys.exit(2)
+    return "json" if json_files else "yaml"
+
+
+def _cmd_validate(args: argparse.Namespace) -> None:
+    """Validate local schema files for structural integrity."""
+    schema_dir: Path = args.schema_dir
+    if not schema_dir.is_dir():
+        print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
+        sys.exit(2)
+
+    fmt = _detect_fmt(schema_dir)
+    ext = ".json" if fmt == "json" else ".yaml"
+    loader = schema_from_json if fmt == "json" else schema_from_yaml
+
+    schema_filter_set: frozenset[str] | None = frozenset(args.schema) if args.schema else None
+    schemas: dict[str, Schema] = {}
+    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
+        if schema_filter_set is not None and schema_file.stem not in schema_filter_set:
+            continue
+        schema = loader(schema_file.read_text(encoding="utf-8"))
+        schemas[schema.name] = schema
+
+    if not schemas:
+        print("No schemas to validate.", file=sys.stderr)
+        sys.exit(2)
+
+    result = validate_schemas(schemas)
+    if not result.has_errors:
+        print(f"OK — {len(schemas)} schema(s) validated, no issues found.")
+        return
+
+    for issue in result.issues:
+        print(f"ERROR: {issue}")
+    print(f"\n{len(result.issues)} issue(s) found in {len(schemas)} schema(s).", file=sys.stderr)
+    sys.exit(1)
+
+
+def _cmd_diff_files(args: argparse.Namespace) -> None:
+    """Compare two local directories of schema files."""
+    dir1: Path = args.dir1
+    dir2: Path = args.dir2
+    for d in (dir1, dir2):
+        if not d.is_dir():
+            print(f"Error: {d} is not a directory.", file=sys.stderr)
+            sys.exit(2)
+
+    fmt1 = _detect_fmt(dir1)
+    fmt2 = _detect_fmt(dir2)
+
+    print(f"Comparing {dir1} against {dir2}...", file=sys.stderr)
+    result = diff_schema_dirs(
+        dir1,
+        dir2,
+        fmt1=fmt1,
+        fmt2=fmt2,
+        schema_names=frozenset(args.schema) if args.schema else None,
+        include_metadata=args.include_metadata,
+    )
+
+    if not result.has_changes:
+        print("No differences found.")
+        return
+
+    _print_diff(result)
+    sys.exit(1)
+
+
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
     client = _make_client(args.host, args.token)
@@ -395,6 +479,45 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_connection_args(gen_sql_p)
     gen_sql_p.set_defaults(func=_cmd_generate_sql)
+
+    # validate
+    validate_p = subparsers.add_parser(
+        "validate",
+        help="Validate local schema files for structural integrity (no Databricks connection).",
+    )
+    validate_p.add_argument(
+        "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
+    )
+    validate_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    validate_p.set_defaults(func=_cmd_validate)
+
+    # diff-files
+    diff_files_p = subparsers.add_parser(
+        "diff-files",
+        help="Compare two local directories of schema files (no Databricks connection needed).",
+    )
+    diff_files_p.add_argument("dir1", type=Path, help="Baseline directory (old/stored state)")
+    diff_files_p.add_argument("dir2", type=Path, help="Current directory (new/live state)")
+    diff_files_p.add_argument(
+        "--schema",
+        "-s",
+        action="append",
+        metavar="SCHEMA",
+        help="Schema filter (repeatable)",
+    )
+    diff_files_p.add_argument(
+        "--include-metadata",
+        action="store_true",
+        dest="include_metadata",
+        help="Include owner in comparison",
+    )
+    diff_files_p.set_defaults(func=_cmd_diff_files)
 
     # list-catalogs
     list_catalogs_p = subparsers.add_parser("list-catalogs", help="List all accessible catalogs.")
