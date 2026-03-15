@@ -81,7 +81,7 @@ uv sync --all-groups
 The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
 
 ```bash
-export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
+export DATABRICKS_HOST=https://<databricks-url>
 export DATABRICKS_TOKEN=<your-personal-access-token>
 ```
 
@@ -211,6 +211,22 @@ Include additional metadata (`owner`, `storage_location`) in the comparison:
 
 ```bash
 databricks-schema generate-sql <catalog> ./schemas/ --include-metadata
+```
+
+### `validate`
+
+Validate local schema files for structural integrity (no Databricks connection needed):
+
+```bash
+databricks-schema validate ./schemas/
+```
+
+### `diff-files`
+
+Compare two local directories of schema files (no Databricks connection needed):
+
+```bash
+databricks-schema diff-files ./schemas-prod/ ./schemas-test/
 ```
 
 ### `list-catalogs`
