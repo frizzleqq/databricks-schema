@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
@@ -22,7 +23,10 @@ class CatalogExtractor:
     def _fetch_tags(self, entity_type: str, entity_name: str) -> dict[str, str]:
         tags: dict[str, str] = {}
         try:
-            for assignment in self.client.entity_tag_assignments.list(entity_type, entity_name):
+            # Percent-encode entity_name so special characters (e.g. slashes in column names)
+            # don't break URL path routing. Dots are safe — they're the UC name separators.
+            encoded_name = quote(entity_name, safe=".")
+            for assignment in self.client.entity_tag_assignments.list(entity_type, encoded_name):
                 key = getattr(assignment, "tag_key", None)
                 value = getattr(assignment, "tag_value", None)
                 if key is not None:

@@ -398,6 +398,33 @@ class TestCatalogExtractor:
 
         client.tables.get.assert_not_called()
 
+    def test_column_tags_slash_in_name(self):
+        """Column names containing slashes must be percent-encoded before tag lookup."""
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        col = _make_col("/example/column", position=1, type_text="STRING")
+        sdk_table = _make_sdk_table("orders", columns=[col])
+        client.tables.list.return_value = [sdk_table]
+
+        def mock_list(entity_type, entity_name):
+            if entity_type == "columns" and entity_name == "mycat.main.orders.%2Fexample%2Fcolumn":
+                return [_make_tag("sensitivity", "high")]
+            return []
+
+        client.entity_tag_assignments.list.side_effect = mock_list
+
+        catalog = extractor.extract_catalog("mycat")
+        assert catalog.schemas[0].tables[0].columns[0].tags == {"sensitivity": "high"}
+
     def test_parallel_extraction(self):
         """With max_workers > 1, all tables are still extracted correctly."""
         extractor, client = self._extractor(max_workers=4)

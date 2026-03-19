@@ -11,3 +11,6 @@ wheels/
 
 # Tests
 .test_output/
+
+# Claude Code
+.claude/
