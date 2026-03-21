@@ -75,7 +75,14 @@ tables:
 
 ## Authentication
 
-The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables (as shown in [Getting Started](#getting-started)), or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
+The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
+
+```bash
+export DATABRICKS_HOST=https://<databricks-url>
+export DATABRICKS_TOKEN=<your-personal-access-token>
+```
+
+Or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
 
 You can also pass credentials directly as flags (see `--host` / `--token` below).
 
