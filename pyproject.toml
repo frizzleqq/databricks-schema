@@ -17,6 +17,7 @@ keywords = ["databricks", "unity-catalog", "schema", "sql"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -30,8 +31,10 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/frizzleqq/databricks-schema"
 Repository = "https://github.com/frizzleqq/databricks-schema"
 Issues = "https://github.com/frizzleqq/databricks-schema/issues"
+Changelog = "https://github.com/frizzleqq/databricks-schema/releases"
 
 [project.scripts]
 databricks-schema = "databricks_schema.cli:main"

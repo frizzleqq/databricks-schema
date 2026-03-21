@@ -10,12 +10,7 @@ Install from PyPI (requires Python 3.11+):
 pip install databricks-schema
 ```
 
-Configure your Databricks credentials:
-
-```bash
-export DATABRICKS_HOST=https://<databricks-url>
-export DATABRICKS_TOKEN=<your-personal-access-token>
-```
+Configure your Databricks credentials (see [Authentication](#authentication) for all supported methods).
 
 Then extract, diff, and generate SQL for your Unity Catalog schemas:
 
@@ -288,7 +283,7 @@ print(sql)
 Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-git clone <repo>
+git clone https://github.com/frizzleqq/databricks-schema
 cd databricks-schema
 uv sync --all-groups  # includes pytest and ruff
 ```
