@@ -77,22 +77,6 @@ tables:
           - id
 ```
 
-## Development Installation
-
-Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone <repo>
-cd databricks-schema
-uv sync
-```
-
-For development (includes pytest and ruff):
-
-```bash
-uv sync --all-groups
-```
-
 ## Authentication
 
 The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables (as shown in [Getting Started](#getting-started)), or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
@@ -297,6 +281,14 @@ print(sql)
 ```
 
 ## Development
+
+Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone <repo>
+cd databricks-schema
+uv sync --all-groups  # includes pytest and ruff
+```
 
 ```bash
 # Run tests
