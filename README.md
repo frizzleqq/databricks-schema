@@ -2,9 +2,22 @@
 
 A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
-## Overview
+## Getting Started
 
-Extract a catalog to YAML files, then diff those files against a catalog — the same one to detect drift or a different one to compare environments (e.g. prod vs test):
+Install from PyPI (requires Python 3.11+):
+
+```bash
+pip install databricks-schema
+```
+
+Configure your Databricks credentials:
+
+```bash
+export DATABRICKS_HOST=https://<databricks-url>
+export DATABRICKS_TOKEN=<your-personal-access-token>
+```
+
+Then extract, diff, and generate SQL for your Unity Catalog schemas:
 
 ```bash
 # 1. Find the catalog you want to snapshot
@@ -21,6 +34,10 @@ databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations
 ```
 
 The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
+
+## Overview
+
+Extract a catalog to YAML files, then diff those files against a catalog — the same one to detect drift or a different one to compare environments (e.g. prod vs test). See [Getting Started](#getting-started) above for a quick walkthrough.
 
 ## Output Format
 
@@ -60,7 +77,7 @@ tables:
           - id
 ```
 
-## Installation
+## Development Installation
 
 Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
 
@@ -78,14 +95,7 @@ uv sync --all-groups
 
 ## Authentication
 
-The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
-
-```bash
-export DATABRICKS_HOST=https://<databricks-url>
-export DATABRICKS_TOKEN=<your-personal-access-token>
-```
-
-Or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
+The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables (as shown in [Getting Started](#getting-started)), or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
 
 You can also pass credentials directly as flags (see `--host` / `--token` below).
 
