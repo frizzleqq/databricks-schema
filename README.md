@@ -35,10 +35,6 @@ databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations
 
 The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
 
-## Overview
-
-Extract a catalog to YAML files, then diff those files against a catalog — the same one to detect drift or a different one to compare environments (e.g. prod vs test). See [Getting Started](#getting-started) above for a quick walkthrough.
-
 ## Output Format
 
 Each schema is written to `{output-dir}/{schema-name}.yaml`. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
