@@ -288,7 +288,7 @@ print(sql)
 Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-git clone <repo>
+git clone https://github.com/frizzleqq/databricks-schema
 cd databricks-schema
 uv sync --all-groups  # includes pytest and ruff
 ```
