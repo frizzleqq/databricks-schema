@@ -2,9 +2,22 @@
 
 A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
-## Overview
+## Getting Started
 
-Extract a catalog to YAML files, then diff those files against a catalog — the same one to detect drift or a different one to compare environments (e.g. prod vs test):
+Install from PyPI (requires Python 3.11+):
+
+```bash
+pip install databricks-schema
+```
+
+Configure your Databricks credentials:
+
+```bash
+export DATABRICKS_HOST=https://<databricks-url>
+export DATABRICKS_TOKEN=<your-personal-access-token>
+```
+
+Then extract, diff, and generate SQL for your Unity Catalog schemas:
 
 ```bash
 # 1. Find the catalog you want to snapshot
@@ -58,22 +71,6 @@ tables:
         ref_table: organizations
         ref_columns:
           - id
-```
-
-## Installation
-
-Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone <repo>
-cd databricks-schema
-uv sync
-```
-
-For development (includes pytest and ruff):
-
-```bash
-uv sync --all-groups
 ```
 
 ## Authentication
@@ -287,6 +284,14 @@ print(sql)
 ```
 
 ## Development
+
+Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone <repo>
+cd databricks-schema
+uv sync --all-groups  # includes pytest and ruff
+```
 
 ```bash
 # Run tests
