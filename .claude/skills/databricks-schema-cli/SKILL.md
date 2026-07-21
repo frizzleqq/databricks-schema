@@ -1,5 +1,5 @@
 ---
-name: databricks-unity-catalog
+name: databricks-schema-cli
 description: Explore, snapshot, diff, and generate migration SQL for Databricks Unity Catalog schemas using the `databricks-schema` CLI. Use this whenever the user wants to list catalogs/schemas in a Databricks workspace, pull a Unity Catalog schema (tables, columns, keys, tags) into version-controllable YAML/JSON, compare a live catalog against stored schema files or two schema directories against each other, validate schema files, or generate Spark SQL DDL to reconcile a catalog with a desired state — even if they just say "what's in this Databricks catalog" or "diff prod vs what's checked in" without naming the tool.
 ---
 

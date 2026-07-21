@@ -281,7 +281,7 @@ print(sql)
 ## Agent Skill
 
 This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
-[`.claude/skills/databricks-unity-catalog/SKILL.md`](.claude/skills/databricks-unity-catalog/SKILL.md)
+[`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
 that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
 explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Point an agent at
 this repo (or copy the skill into your own project) and it can use the CLI directly instead of
