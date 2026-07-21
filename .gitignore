@@ -13,4 +13,5 @@ wheels/
 .test_output/
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/skills/
