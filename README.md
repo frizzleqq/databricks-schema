@@ -160,7 +160,7 @@ Extract specific schemas only:
 databricks-schema extract <catalog> --schema main --schema raw --output-dir ./schemas/
 ```
 
-Print to stdout instead of writing files (no `--output-dir`) — the catalog and all matching schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`), even if only one schema matches:
+Print to stdout instead of writing files (no `--output-dir`) — the catalog and its matching schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`):
 
 ```bash
 databricks-schema extract <catalog> --schema main
