@@ -52,8 +52,8 @@ databricks-schema extract <catalog> --schema main --schema raw --output-dir ./sc
 
 Notes:
 - `--schema` / `-s` is repeatable; omit it to extract every schema.
-- Without `--output-dir`, stdout output is a `Catalog` document (`name` + `schemas: [...]`) —
-  read schema data from `.schemas`, not as a single `Schema` document.
+- `--output-dir` writes one file per schema; omitting it prints one `Catalog` document to stdout
+  (`name` + `schemas: [...]`) covering all matching schemas.
 - `--format json` / `-f json` writes `.json` instead of `.yaml` (same structure either way).
 - `--include-metadata` adds `owner` and `storage_location` (excluded by default — smaller, more
   diffable output).
