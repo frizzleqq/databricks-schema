@@ -40,8 +40,10 @@ list for the commands below.
 ## Pulling a schema into a readable snapshot
 
 ```bash
-# One schema, printed straight to stdout (no --output-dir) — good for "show me schema X"
+# Printed straight to stdout as one Catalog document (no --output-dir) — good for
+# "show me schema X" or "show me this whole catalog"
 databricks-schema extract <catalog> --schema main
+databricks-schema extract <catalog>
 
 # Whole catalog (or a filtered set of schemas) written to one file per schema
 databricks-schema extract <catalog> --output-dir ./schemas/
@@ -50,7 +52,8 @@ databricks-schema extract <catalog> --schema main --schema raw --output-dir ./sc
 
 Notes:
 - `--schema` / `-s` is repeatable; omit it to extract every schema.
-- `--output-dir` is required unless exactly one schema matches the filter.
+- Without `--output-dir`, stdout output is always a `Catalog` document (`name` + `schemas: [...]`),
+  even when only one schema matches — parse `.schemas` to get the list, not a single `Schema`.
 - `--format json` / `-f json` writes `.json` instead of `.yaml` (same structure either way).
 - `--include-metadata` adds `owner` and `storage_location` (excluded by default — smaller, more
   diffable output).
@@ -93,6 +96,19 @@ tables:
 Read this directly to answer questions about a catalog's structure — column names/types,
 nullability, primary/foreign keys, per-object tags — without needing SDK calls of your own.
 Foreign keys reference `ref_schema` + `ref_table` only (same catalog as the source table).
+
+Stdout output (no `--output-dir`) wraps this in a `Catalog` document instead — same schema shape,
+nested under `schemas`, with the catalog name at the top level:
+
+```yaml
+name: prod_catalog
+schemas:
+  - name: main
+    comment: Main production schema
+    tags:
+      env: prod
+    tables: [...]
+```
 
 ## Comparing catalog state
 
