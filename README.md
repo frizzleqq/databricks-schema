@@ -97,6 +97,14 @@ with [uv](https://github.com/astral-sh/uv):
 uv tool install databricks-schema
 ```
 
+To use the skill in your own project without cloning this repo, download it directly:
+
+```bash
+mkdir -p .claude/skills/databricks-schema-cli
+curl -o .claude/skills/databricks-schema-cli/SKILL.md \
+  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/.claude/skills/databricks-schema-cli/SKILL.md
+```
+
 ## Development
 
 Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
