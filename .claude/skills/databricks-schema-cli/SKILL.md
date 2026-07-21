@@ -17,15 +17,15 @@ the common path, not every flag.
 
 ## Authentication
 
-The CLI needs a Databricks host + credential, resolved in this order:
+Don't pass `--host` / `--token` yourself. Just run the commands — the CLI resolves credentials
+on its own via the Databricks SDK, from `DATABRICKS_HOST`/`DATABRICKS_TOKEN` env vars, an active
+`databricks auth login` session, or a profile in `~/.databrickscfg`, whichever is already set up
+in the environment.
 
-1. `--host` / `--token` flags on the command itself
-2. `DATABRICKS_HOST` / `DATABRICKS_TOKEN` environment variables
-3. A Databricks CLI profile in `~/.databrickscfg` (auto-detected by the SDK; use `DATABRICKS_CONFIG_PROFILE` to pick a non-default profile)
-
-If a command fails with an auth or permission error, check which of these is actually set before
-assuming the catalog/schema name is wrong — the CLI prints a distinct error for `NotFound` vs.
-`Unauthenticated`/`PermissionDenied`.
+If a command fails with an `Unauthenticated`/`PermissionDenied` error, that means none of those
+are configured (or the credential lacks access) — tell the user auth is missing/insufficient
+rather than trying to fix it yourself. Don't confuse this with a `NotFound` error, which means
+the catalog/schema name itself is wrong.
 
 ## Orienting yourself in a workspace
 
