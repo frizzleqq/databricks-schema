@@ -31,6 +31,7 @@ tests/
   test_yaml_io.py
   test_diff.py       # pure model comparison, no SDK calls
   test_sql_gen.py    # pure SQL generation tests, no SDK calls
+.claude/skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to drive the CLI
 ```
 
 ## Conventions
@@ -59,3 +60,4 @@ tests/
 - `sql_gen.py` is pure (no SDK, no I/O); diff direction: `FieldChange.old` = stored (target), `.new` = live
 - FK refs in SQL use same catalog as the source table (`ref_schema` + `ref_table` from model)
 - Unsupported field changes (`table_type`) emit `-- TODO: unsupported change: …` comments
+- When CLI commands, flags, or output shape change, update `.claude/skills/databricks-schema-cli/SKILL.md` to match

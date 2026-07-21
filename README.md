@@ -278,6 +278,22 @@ sql = schema_diff_to_sql("my_catalog", diff, stored_schema=stored, allow_drop=Fa
 print(sql)
 ```
 
+## Agent Skill
+
+This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
+[`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
+that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
+explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Point an agent at
+this repo (or copy the skill into your own project) and it can use the CLI directly instead of
+writing ad-hoc Databricks SDK calls.
+
+The skill assumes the `databricks-schema` command is on `PATH`. Install it as a standalone tool
+with [uv](https://github.com/astral-sh/uv):
+
+```bash
+uv tool install databricks-schema
+```
+
 ## Development
 
 Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
