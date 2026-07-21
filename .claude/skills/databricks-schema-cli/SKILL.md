@@ -5,15 +5,15 @@ description: Explore, snapshot, diff, and generate migration SQL for Databricks 
 
 # Databricks Unity Catalog exploration (`databricks-schema`)
 
-`databricks-schema` is a CLI (and Python library) that talks to a Databricks workspace via the
-Databricks SDK and represents Unity Catalog schemas as YAML/JSON files — one file per schema.
-Use it instead of writing ad-hoc SDK calls whenever the task is "look at / snapshot / diff /
-generate SQL for" a Unity Catalog schema.
+`databricks-schema` is a CLI that talks to a Databricks workspace via the Databricks SDK and
+represents Unity Catalog schemas as YAML/JSON files — one file per schema. Use it instead of
+writing ad-hoc SDK calls whenever the task is "look at / snapshot / diff / generate SQL for" a
+Unity Catalog schema.
 
-Run it as `uv run databricks-schema <command> ...` inside this repo, or `databricks-schema
-<command> ...` if it's installed (`pip install databricks-schema`). Run `databricks-schema
-<command> --help` to confirm exact flags before relying on this document for anything unusual —
-this skill covers the common path, not every flag.
+Call it as `databricks-schema <command> ...`. If the command isn't found, install it first (see
+`README.md`, e.g. `uv tool install databricks-schema`). Run `databricks-schema <command> --help`
+to confirm exact flags before relying on this document for anything unusual — this skill covers
+the common path, not every flag.
 
 ## Authentication
 
@@ -160,6 +160,3 @@ Same `--schema`, `--no-tags`, `--include-metadata` filters apply as above.
 | Check if two snapshot directories differ (no live access) | `diff-files` |
 | Sanity-check hand-edited YAML/JSON before using it         | `validate` |
 | Produce SQL to reconcile live catalog with a snapshot      | `generate-sql` |
-
-For deeper Python-level usage (calling `CatalogExtractor`, `diff_schemas`, `schema_diff_to_sql`
-directly), see `examples/` and the "Python Library Usage" section of `README.md` in this repo.
