@@ -68,6 +68,18 @@ tables:
           - id
 ```
 
+Without `--output-dir`, `extract` prints a single `Catalog` document to stdout instead — the same schema shape nested under a `schemas` list, with the catalog name as a top-level field:
+
+```yaml
+name: prod_catalog
+schemas:
+  - name: main
+    comment: Main production schema
+    tags:
+      env: prod
+    tables: [...]
+```
+
 ## Authentication
 
 The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
@@ -148,7 +160,7 @@ Extract specific schemas only:
 databricks-schema extract <catalog> --schema main --schema raw --output-dir ./schemas/
 ```
 
-Print a single schema to stdout (no `--output-dir`):
+Print to stdout instead of writing files (no `--output-dir`) — the catalog and its matching schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`):
 
 ```bash
 databricks-schema extract <catalog> --schema main

@@ -21,6 +21,8 @@ from databricks_schema.models import Schema
 from databricks_schema.sql_gen import schema_diff_to_sql
 from databricks_schema.validate import validate_schemas
 from databricks_schema.yaml_io import (
+    catalog_to_json,
+    catalog_to_yaml,
     schema_from_json,
     schema_from_yaml,
     schema_to_json,
@@ -61,31 +63,19 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
 
     serializer = schema_to_json if args.fmt == "json" else schema_to_yaml
+    catalog_serializer = catalog_to_json if args.fmt == "json" else catalog_to_yaml
     ext = ".json" if args.fmt == "json" else ".yaml"
 
     print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
 
     if args.output_dir is None:
-        schema_filter_set = set(args.schema) if args.schema else None
-        matching_schemas = [
-            s.name
-            for s in client.schemas.list(catalog_name=args.catalog)
-            if (s.name or "") not in {"information_schema"}
-            and (schema_filter_set is None or (s.name or "") in schema_filter_set)
-        ]
-        if len(matching_schemas) != 1:
-            print(
-                "Error: --output-dir is required when extracting multiple schemas.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         catalog_obj = extractor.extract_catalog(
             catalog_name=args.catalog,
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=not args.no_tags,
         )
-        print(serializer(catalog_obj.schemas[0]))
+        print(catalog_serializer(catalog_obj))
         return
 
     output_dir: Path = args.output_dir
