@@ -73,7 +73,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             catalog_name=args.catalog,
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
-            include_tags=not args.no_tags,
+            include_tags=args.include_tags,
         )
         print(catalog_serializer(catalog_obj))
         return
@@ -85,7 +85,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         catalog_name=args.catalog,
         schema_filter=args.schema,
         include_metadata=args.include_metadata,
-        include_tags=not args.no_tags,
+        include_tags=args.include_tags,
     ):
         out_file = output_dir / f"{s.name}{ext}"
         out_file.write_text(serializer(s), encoding="utf-8")
@@ -119,7 +119,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
         catalog_name=args.catalog,
         schema_filter=args.schema,
         include_metadata=args.include_metadata,
-        include_tags=not args.no_tags,
+        include_tags=args.include_tags,
     )
 
     result = diff_catalog_with_dir(
@@ -190,7 +190,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         catalog_name=args.catalog,
         schema_filter=args.schema,
         include_metadata=args.include_metadata,
-        include_tags=not args.no_tags,
+        include_tags=args.include_tags,
     )
 
     live = {s.name: s for s in catalog_obj.schemas}
@@ -361,10 +361,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Include additional metadata in output (owner, storage_location)",
     )
     extract_p.add_argument(
-        "--no-tags",
+        "--include-tags",
         action="store_true",
-        dest="no_tags",
-        help="Skip tag lookups (faster, omits tags from output)",
+        dest="include_tags",
+        help="Include Unity Catalog tags in output (extra API calls per entity)",
     )
     extract_p.add_argument(
         "--format",
@@ -398,10 +398,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Schema filter (repeatable)",
     )
     diff_p.add_argument(
-        "--no-tags",
+        "--include-tags",
         action="store_true",
-        dest="no_tags",
-        help="Skip tag lookups (faster, omits tags from comparison)",
+        dest="include_tags",
+        help="Include Unity Catalog tags in comparison (extra API calls per entity)",
     )
     diff_p.add_argument(
         "--include-metadata",
@@ -450,10 +450,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Schema filter (repeatable)",
     )
     gen_sql_p.add_argument(
-        "--no-tags",
+        "--include-tags",
         action="store_true",
-        dest="no_tags",
-        help="Skip tag lookups (faster, omits tags from comparison)",
+        dest="include_tags",
+        help="Include Unity Catalog tags in comparison (extra API calls per entity)",
     )
     gen_sql_p.add_argument(
         "--include-metadata",

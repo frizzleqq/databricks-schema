@@ -166,10 +166,10 @@ Print to stdout instead of writing files (no `--output-dir`) — the catalog and
 databricks-schema extract <catalog> --schema main
 ```
 
-Skip tag lookups for faster extraction (tags will be absent from output):
+Include Unity Catalog tags in the output (extra API calls per entity; excluded by default):
 
 ```bash
-databricks-schema extract <catalog> --output-dir ./schemas/ --no-tags
+databricks-schema extract <catalog> --output-dir ./schemas/ --include-tags
 ```
 
 Include additional metadata (`owner`, `storage_location`) in the output:
@@ -198,10 +198,10 @@ Compare specific schemas only:
 databricks-schema diff <catalog> ./schemas/ --schema main --schema raw
 ```
 
-Skip tag lookups during comparison:
+Include Unity Catalog tags in the comparison (excluded by default):
 
 ```bash
-databricks-schema diff <catalog> ./schemas/ --no-tags
+databricks-schema diff <catalog> ./schemas/ --include-tags
 ```
 
 Include additional metadata (`owner`, `storage_location`) in the comparison:
@@ -250,10 +250,10 @@ Filter to specific schemas:
 databricks-schema generate-sql <catalog> ./schemas/ --schema main --schema raw
 ```
 
-Skip tag lookups for faster comparison:
+Include Unity Catalog tags in the comparison (excluded by default):
 
 ```bash
-databricks-schema generate-sql <catalog> ./schemas/ --no-tags
+databricks-schema generate-sql <catalog> ./schemas/ --include-tags
 ```
 
 Include additional metadata (`owner`, `storage_location`) in the comparison:
@@ -307,8 +307,8 @@ from databricks_schema import diff_catalog_with_dir, diff_schemas, schema_diff_t
 extractor = CatalogExtractor(max_workers=4)
 catalog = extractor.extract_catalog("my_catalog", schema_filter=["main", "raw"])
 
-# Skip tag lookups for faster extraction
-catalog = extractor.extract_catalog("my_catalog", include_tags=False)
+# Include Unity Catalog tags (extra API calls per entity; excluded by default)
+catalog = extractor.extract_catalog("my_catalog", include_tags=True)
 
 # Include additional metadata (owner, storage_location)
 catalog = extractor.extract_catalog("my_catalog", include_metadata=True)

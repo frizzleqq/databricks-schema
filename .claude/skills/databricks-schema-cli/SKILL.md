@@ -57,7 +57,7 @@ Notes:
 - `--format json` / `-f json` writes `.json` instead of `.yaml` (same structure either way).
 - `--include-metadata` adds `owner` and `storage_location` (excluded by default — smaller, more
   diffable output).
-- `--no-tags` skips Unity Catalog tag lookups for a faster extract when tags don't matter.
+- `--include-tags` adds Unity Catalog tags (excluded by default — extra API calls per entity).
 - `--workers N` controls parallel table extraction (default 4); raise it for large catalogs.
 
 ### Shape of the output
@@ -137,7 +137,7 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 - `1` — differences found (this is normal, not a failure)
 - `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found)
 
-Same `--schema`, `--no-tags`, `--include-metadata` flags apply as for `extract`.
+Same `--schema`, `--include-tags`, `--include-metadata` flags apply as for `extract`.
 
 ## Validating schema files
 
@@ -163,7 +163,7 @@ make them executable. Treat this as a review-then-run step, not something to pip
 execution, especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) show up as
 `-- TODO: unsupported change: ...` comments rather than being silently dropped.
 
-Same `--schema`, `--no-tags`, `--include-metadata` filters apply as above.
+Same `--schema`, `--include-tags`, `--include-metadata` filters apply as above.
 
 ## Choosing the right command
 

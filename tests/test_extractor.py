@@ -276,7 +276,7 @@ class TestCatalogExtractor:
 
         client.entity_tag_assignments.list.side_effect = mock_list
 
-        catalog = extractor.extract_catalog("mycat")
+        catalog = extractor.extract_catalog("mycat", include_tags=True)
         assert catalog.schemas[0].tags == {"env": "prod", "team": "data"}
 
     def test_table_tags_extracted(self):
@@ -301,7 +301,7 @@ class TestCatalogExtractor:
 
         client.entity_tag_assignments.list.side_effect = mock_list
 
-        catalog = extractor.extract_catalog("mycat")
+        catalog = extractor.extract_catalog("mycat", include_tags=True)
         assert catalog.schemas[0].tables[0].tags == {"pii": "true"}
 
     def test_column_tags_extracted(self):
@@ -327,7 +327,7 @@ class TestCatalogExtractor:
 
         client.entity_tag_assignments.list.side_effect = mock_list
 
-        catalog = extractor.extract_catalog("mycat")
+        catalog = extractor.extract_catalog("mycat", include_tags=True)
         assert catalog.schemas[0].tables[0].columns[0].tags == {"sensitivity": "high"}
 
     def test_fetch_tags_not_found_logs_warning_and_continues(self, caplog):
@@ -349,12 +349,12 @@ class TestCatalogExtractor:
         client.entity_tag_assignments.list.side_effect = NotFound("column not found")
 
         with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
-            catalog = extractor.extract_catalog("mycat")
+            catalog = extractor.extract_catalog("mycat", include_tags=True)
 
         assert catalog.schemas[0].tables[0].columns[0].tags == {}
         assert any("Not found" in r.message for r in caplog.records)
 
-    def test_no_tags_skips_all_tag_calls(self):
+    def test_tags_excluded_by_default(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
@@ -370,7 +370,7 @@ class TestCatalogExtractor:
         sdk_table = _make_sdk_table("orders", columns=[col])
         client.tables.list.return_value = [sdk_table]
 
-        catalog = extractor.extract_catalog("mycat", include_tags=False)
+        catalog = extractor.extract_catalog("mycat")
 
         client.entity_tag_assignments.list.assert_not_called()
         assert catalog.tags == {}
@@ -422,7 +422,7 @@ class TestCatalogExtractor:
 
         client.entity_tag_assignments.list.side_effect = mock_list
 
-        catalog = extractor.extract_catalog("mycat")
+        catalog = extractor.extract_catalog("mycat", include_tags=True)
         assert catalog.schemas[0].tables[0].columns[0].tags == {"sensitivity": "high"}
 
     def test_parallel_extraction(self):

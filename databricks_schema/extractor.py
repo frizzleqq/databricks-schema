@@ -40,7 +40,7 @@ class CatalogExtractor:
         catalog_name: str,
         schema_filter: list[str] | None = None,
         include_metadata: bool = False,
-        include_tags: bool = True,
+        include_tags: bool = False,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
             schema_name = sdk_schema.name or ""
@@ -55,7 +55,7 @@ class CatalogExtractor:
         catalog_name: str,
         schema_filter: list[str] | None = None,
         include_metadata: bool = False,
-        include_tags: bool = True,
+        include_tags: bool = False,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
         catalog_tags = self._fetch_tags("catalogs", catalog_name) if include_tags else {}
@@ -81,7 +81,7 @@ class CatalogExtractor:
         catalog_name: str,
         sdk_schema,
         include_metadata: bool = False,
-        include_tags: bool = True,
+        include_tags: bool = False,
     ) -> Schema:
         schema_name = sdk_schema.name or ""
         schema_tags = (
@@ -118,7 +118,7 @@ class CatalogExtractor:
         schema_name: str,
         sdk_table,
         include_metadata: bool = False,
-        include_tags: bool = True,
+        include_tags: bool = False,
     ) -> Table:
         table_name = sdk_table.name or ""
         full_name = f"{catalog_name}.{schema_name}.{table_name}"
