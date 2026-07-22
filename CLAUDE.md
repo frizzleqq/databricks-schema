@@ -53,6 +53,7 @@ tests/
 - `diff` auto-detects format from files present in the directory; exits 2 on mixed YAML+JSON
 - `TableType` is re-exported from `databricks.sdk.service.catalog` — do not redefine it
 - `--include-metadata` flag (on `extract`, `diff`, `generate-sql`) enables `owner` + `storage_location`; both are excluded by default
+- `--include-tags` flag (on `extract`, `diff`, `generate-sql`) enables Unity Catalog tag lookups; excluded by default
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)
 - `generate-sql` auto-detects format from files; exits 2 on mixed YAML+JSON or empty directory
