@@ -27,6 +27,14 @@ are configured (or the credential lacks access) — tell the user auth is missin
 rather than trying to fix it yourself. Don't confuse this with a `NotFound` error, which means
 the catalog/schema name itself is wrong.
 
+## Reducing noise for agentic use
+
+`extract`, `diff`, `generate-sql`, and `diff-files` print progress lines (e.g. `Extracting
+catalog 'X'...`, `Comparing catalog 'X' against ...`) to stderr before/while they run. Pass
+`--quiet` / `-q` to suppress them — the actual result (extracted YAML/JSON, diff tree, generated
+SQL, exit code) is unaffected; only the informational narration is dropped. Errors are always
+printed regardless of `--quiet`.
+
 ## Orienting yourself in a workspace
 
 ```bash
