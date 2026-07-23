@@ -7,6 +7,7 @@ from databricks_schema.diff import (
     SchemaDiff,
     TableDiff,
     diff_catalog_with_dir,
+    diff_catalogs,
     diff_schema_dirs,
     diff_schemas,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "catalog_to_json",
     "catalog_to_yaml",
     "diff_catalog_with_dir",
+    "diff_catalogs",
     "diff_schema_dirs",
     "diff_schemas",
     "schema_diff_to_sql",

@@ -124,9 +124,18 @@ schemas:
 # Live catalog vs. a directory of stored schema files (format auto-detected: YAML or JSON)
 databricks-schema diff <catalog> ./schemas/
 
+# Live catalog vs. another live catalog (e.g. dev vs. prod) — no local files needed
+databricks-schema diff dev_catalog prod_catalog
+
 # Two local directories, no Databricks connection needed
 databricks-schema diff-files ./schemas-old/ ./schemas-new/
 ```
+
+For `diff`, the second argument is treated as a directory if one exists at that path on disk
+(checked first — it's a free local stat), otherwise it's treated as the name of a second catalog
+to compare against live. In the two-catalog form, the first `catalog` argument is the
+"live"/actual side and the second is the baseline/reference side, matching the directory form
+where the catalog is live and the directory is the baseline.
 
 Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 

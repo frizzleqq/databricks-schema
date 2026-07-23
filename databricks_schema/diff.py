@@ -176,6 +176,43 @@ def diff_schema_dirs(
     return CatalogDiff(schemas=schema_diffs)
 
 
+def diff_catalogs(
+    live: Catalog,
+    stored: Catalog,
+    ignore_added: frozenset[str] = frozenset({"default"}),
+    schema_names: frozenset[str] | None = None,
+    include_metadata: bool = False,
+) -> CatalogDiff:
+    """Compare two live Catalogs directly (no local files involved).
+
+    live is treated as the actual/current state (the primary `catalog` CLI argument).
+    stored is treated as the baseline/reference state (the second catalog).
+
+    Schemas present in stored but not live are reported as "removed".
+    Schemas present in live but not stored are reported as "added", unless their name
+    is in ignore_added (default: {"default"}).
+
+    schema_names: if set, only schemas whose name is in this set are compared from either catalog.
+    """
+    stored_map = {
+        s.name: s for s in stored.schemas if schema_names is None or s.name in schema_names
+    }
+    live_map = {s.name: s for s in live.schemas if schema_names is None or s.name in schema_names}
+
+    schema_diffs: list[SchemaDiff] = []
+    for name, stored_schema in stored_map.items():
+        if name not in live_map:
+            schema_diffs.append(SchemaDiff(name=name, status="removed"))
+        else:
+            schema_diffs.append(diff_schemas(live_map[name], stored_schema, include_metadata))
+
+    for name in live_map:
+        if name not in stored_map and name not in ignore_added:
+            schema_diffs.append(SchemaDiff(name=name, status="added"))
+
+    return CatalogDiff(schemas=schema_diffs)
+
+
 def diff_catalog_with_dir(
     catalog: Catalog,
     schema_dir: Path,

@@ -192,6 +192,12 @@ Compare the live catalog against previously extracted schema files (format auto-
 databricks-schema diff <catalog> ./schemas/
 ```
 
+Or compare two live catalogs directly, e.g. dev against prod — no local files needed. The second argument is treated as a directory if one exists at that path, otherwise as a catalog name:
+
+```bash
+databricks-schema diff dev_catalog prod_catalog
+```
+
 Compare specific schemas only:
 
 ```bash
@@ -301,7 +307,7 @@ See also the [`examples/`](examples/) directory for standalone scripts.
 ```python
 from pathlib import Path
 from databricks_schema import CatalogExtractor, catalog_to_yaml, schema_from_yaml
-from databricks_schema import diff_catalog_with_dir, diff_schemas, schema_diff_to_sql
+from databricks_schema import diff_catalog_with_dir, diff_catalogs, diff_schemas, schema_diff_to_sql
 
 # Extract using configured auth (max_workers controls parallel table extraction)
 extractor = CatalogExtractor(max_workers=4)
@@ -325,6 +331,10 @@ result = diff_catalog_with_dir(catalog, Path("./schemas/"))
 if result.has_changes:
     for schema_diff in result.schemas:
         print(schema_diff.name, schema_diff.status)
+
+# Compare two live catalogs directly
+prod_catalog = extractor.extract_catalog("prod_catalog")
+result = diff_catalogs(live=catalog, stored=prod_catalog)
 
 # Compare two Schema objects directly
 stored = schema_from_yaml(open("schemas/main.yaml").read())

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from databricks_schema.diff import (
     diff_catalog_with_dir,
+    diff_catalogs,
     diff_schema_dirs,
     diff_schemas,
 )
@@ -247,6 +248,67 @@ class TestDiffCatalogWithDir:
         result = diff_catalog_with_dir(catalog, tmp_path, fmt="json")
         assert not result.has_changes
         assert result.schemas[0].status == "unchanged"
+
+
+class TestDiffCatalogs:
+    def test_no_changes(self):
+        schema = _schema("main", tables=[_table("users", columns=[_col("id")])])
+        live = Catalog(name="dev", schemas=[schema])
+        stored = Catalog(name="prod", schemas=[schema])
+        result = diff_catalogs(live, stored)
+        assert not result.has_changes
+        assert result.schemas[0].status == "unchanged"
+
+    def test_schema_added_in_live(self):
+        main = _schema("main")
+        live = Catalog(name="dev", schemas=[main, _schema("extra")])
+        stored = Catalog(name="prod", schemas=[main])
+        result = diff_catalogs(live, stored)
+        added = next(s for s in result.schemas if s.name == "extra")
+        assert added.status == "added"
+
+    def test_schema_removed_from_live(self):
+        main = _schema("main")
+        live = Catalog(name="dev", schemas=[])
+        stored = Catalog(name="prod", schemas=[main])
+        result = diff_catalogs(live, stored)
+        assert result.schemas[0].name == "main"
+        assert result.schemas[0].status == "removed"
+
+    def test_field_modified(self):
+        live = Catalog(name="dev", schemas=[_schema("main", comment="new")])
+        stored = Catalog(name="prod", schemas=[_schema("main", comment="old")])
+        result = diff_catalogs(live, stored)
+        s = result.schemas[0]
+        assert s.status == "modified"
+        assert s.changes[0].field == "comment"
+        assert s.changes[0].old == "old"
+        assert s.changes[0].new == "new"
+
+    def test_default_schema_not_reported_as_added(self):
+        main = _schema("main")
+        live = Catalog(name="dev", schemas=[main, _schema("default")])
+        stored = Catalog(name="prod", schemas=[main])
+        result = diff_catalogs(live, stored)
+        assert not any(s.name == "default" for s in result.schemas)
+        assert not result.has_changes
+
+    def test_ignore_added_can_be_overridden(self):
+        main = _schema("main")
+        live = Catalog(name="dev", schemas=[main, _schema("default")])
+        stored = Catalog(name="prod", schemas=[main])
+        result = diff_catalogs(live, stored, ignore_added=frozenset())
+        assert any(s.name == "default" and s.status == "added" for s in result.schemas)
+
+    def test_schema_names_filter(self):
+        main = _schema("main")
+        raw_old = _schema("raw", comment="old")
+        raw_new = _schema("raw", comment="new")
+        live = Catalog(name="dev", schemas=[main, raw_new])
+        stored = Catalog(name="prod", schemas=[main, raw_old])
+        result = diff_catalogs(live, stored, schema_names=frozenset({"main"}))
+        assert not any(s.name == "raw" for s in result.schemas)
+        assert not result.has_changes
 
 
 class TestDiffSchemaDirs:
