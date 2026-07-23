@@ -380,15 +380,15 @@ def _cmd_diff_files(args: argparse.Namespace) -> None:
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
     client = _make_client(args.host, args.token)
-    for c in client.catalogs.list():
-        print(c.name)
+    for name in sorted(c.name for c in client.catalogs.list()):
+        print(name)
 
 
 def _cmd_list_schemas(args: argparse.Namespace) -> None:
     """List schemas in a catalog."""
     client = _make_client(args.host, args.token)
-    for s in client.schemas.list(catalog_name=args.catalog):
-        print(s.name)
+    for name in sorted(s.name for s in client.schemas.list(catalog_name=args.catalog)):
+        print(name)
 
 
 def _build_parser() -> argparse.ArgumentParser:
