@@ -41,8 +41,10 @@ class _LevelAwareFormatter(logging.Formatter):
 
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(_LevelAwareFormatter())
-logging.getLogger("databricks_schema").addHandler(_handler)
-logging.getLogger("databricks_schema").setLevel(logging.INFO)
+_package_logger = logging.getLogger("databricks_schema")
+_package_logger.addHandler(_handler)
+_package_logger.setLevel(logging.INFO)
+_package_logger.propagate = False
 
 logger = logging.getLogger(__name__)
 
