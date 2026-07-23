@@ -29,10 +29,22 @@ from databricks_schema.yaml_io import (
     schema_to_yaml,
 )
 
+
+class _LevelAwareFormatter(logging.Formatter):
+    """Plain message for INFO (progress); "LEVEL: message" for WARNING and above."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno >= logging.WARNING:
+            return f"{record.levelname}: {record.getMessage()}"
+        return record.getMessage()
+
+
 _handler = logging.StreamHandler(sys.stderr)
-_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+_handler.setFormatter(_LevelAwareFormatter())
 logging.getLogger("databricks_schema").addHandler(_handler)
-logging.getLogger("databricks_schema").setLevel(logging.DEBUG)
+logging.getLogger("databricks_schema").setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
 
 
 def _make_client(host: str | None, token: str | None) -> WorkspaceClient:
@@ -42,6 +54,15 @@ def _make_client(host: str | None, token: str | None) -> WorkspaceClient:
     if token:
         kwargs["token"] = token
     return WorkspaceClient(**kwargs)
+
+
+def _add_quiet_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress informational progress messages (errors are still printed)",
+    )
 
 
 def _add_connection_args(parser: argparse.ArgumentParser) -> None:
@@ -66,7 +87,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     catalog_serializer = catalog_to_json if args.fmt == "json" else catalog_to_yaml
     ext = ".json" if args.fmt == "json" else ".yaml"
 
-    print(f"Extracting catalog '{args.catalog}'...", file=sys.stderr)
+    logger.info("Extracting catalog '%s'...", args.catalog)
 
     if args.output_dir is None:
         catalog_obj = extractor.extract_catalog(
@@ -89,10 +110,10 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     ):
         out_file = output_dir / f"{s.name}{ext}"
         out_file.write_text(serializer(s), encoding="utf-8")
-        print(f"  Wrote {out_file}", file=sys.stderr)
+        logger.info("  Wrote %s", out_file)
         count += 1
 
-    print(f"Done — {count} schema(s) written to {output_dir}", file=sys.stderr)
+    logger.info("Done — %d schema(s) written to %s", count, output_dir)
 
 
 def _cmd_diff(args: argparse.Namespace) -> None:
@@ -114,7 +135,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
-    print(f"Comparing catalog '{args.catalog}' against {schema_dir}...", file=sys.stderr)
+    logger.info("Comparing catalog '%s' against %s...", args.catalog, schema_dir)
     catalog_obj = extractor.extract_catalog(
         catalog_name=args.catalog,
         schema_filter=args.schema,
@@ -185,7 +206,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
-    print(f"Generating SQL for catalog '{args.catalog}' against {schema_dir}...", file=sys.stderr)
+    logger.info("Generating SQL for catalog '%s' against %s...", args.catalog, schema_dir)
     catalog_obj = extractor.extract_catalog(
         catalog_name=args.catalog,
         schema_filter=args.schema,
@@ -227,7 +248,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         for schema_name, sql in sql_outputs:
             out_file = output_dir / f"{schema_name}.sql"
             out_file.write_text(sql, encoding="utf-8")
-            print(f"  Wrote {out_file}", file=sys.stderr)
+            logger.info("  Wrote %s", out_file)
     else:
         for schema_name, sql in sql_outputs:
             print(f"-- Schema: {schema_name}")
@@ -294,7 +315,7 @@ def _cmd_diff_files(args: argparse.Namespace) -> None:
     fmt1 = _detect_fmt(dir1)
     fmt2 = _detect_fmt(dir2)
 
-    print(f"Comparing {dir1} against {dir2}...", file=sys.stderr)
+    logger.info("Comparing %s against %s...", dir1, dir2)
     result = diff_schema_dirs(
         dir1,
         dir2,
@@ -331,6 +352,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="databricks-schema",
         description="Databricks Unity Catalog schema extractor",
     )
+    parser.set_defaults(quiet=False)
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     subparsers.required = True
 
@@ -381,6 +403,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of parallel workers for table extraction (default: 4)",
     )
+    _add_quiet_arg(extract_p)
     _add_connection_args(extract_p)
     extract_p.set_defaults(func=_cmd_extract)
 
@@ -416,6 +439,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of parallel workers for table extraction (default: 4)",
     )
+    _add_quiet_arg(diff_p)
     _add_connection_args(diff_p)
     diff_p.set_defaults(func=_cmd_diff)
 
@@ -468,6 +492,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of parallel workers for table extraction (default: 4)",
     )
+    _add_quiet_arg(gen_sql_p)
     _add_connection_args(gen_sql_p)
     gen_sql_p.set_defaults(func=_cmd_generate_sql)
 
@@ -508,6 +533,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="include_metadata",
         help="Include owner in comparison",
     )
+    _add_quiet_arg(diff_files_p)
     diff_files_p.set_defaults(func=_cmd_diff_files)
 
     # list-catalogs
@@ -530,6 +556,8 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args()
+    if args.quiet:
+        logging.getLogger("databricks_schema").setLevel(logging.WARNING)
     try:
         args.func(args)
     except NotFound as e:
