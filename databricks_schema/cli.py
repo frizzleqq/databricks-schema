@@ -13,6 +13,7 @@ from databricks_schema.diff import (
     CatalogDiff,
     SchemaDiff,
     diff_catalog_with_dir,
+    diff_catalogs,
     diff_schema_dirs,
     diff_schemas,
 )
@@ -119,39 +120,53 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 
 
 def _cmd_diff(args: argparse.Namespace) -> None:
-    """Compare Unity Catalog schemas against local YAML or JSON files."""
-    schema_dir: Path = args.schema_dir
-    if not schema_dir.is_dir():
-        print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
-        sys.exit(2)
-
-    yaml_files = list(schema_dir.glob("*.yaml"))
-    json_files = list(schema_dir.glob("*.json"))
-    if yaml_files and json_files:
-        print("Error: mixed YAML and JSON files in schema directory.", file=sys.stderr)
-        sys.exit(2)
-    elif not yaml_files and not json_files:
-        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
-        sys.exit(2)
-    fmt = "json" if json_files else "yaml"
+    """Compare Unity Catalog schemas against local YAML/JSON files, or against another catalog."""
+    target: Path = args.target
+    schema_names = frozenset(args.schema) if args.schema else None
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
-    logger.info("Comparing catalog '%s' against %s...", args.catalog, schema_dir)
-    catalog_obj = extractor.extract_catalog(
-        catalog_name=args.catalog,
-        schema_filter=args.schema,
-        include_metadata=args.include_metadata,
-        include_tags=args.include_tags,
-    )
 
-    result = diff_catalog_with_dir(
-        catalog_obj,
-        schema_dir,
-        schema_names=frozenset(args.schema) if args.schema else None,
-        fmt=fmt,
-        include_metadata=args.include_metadata,
-    )
+    # A local directory is checked first — it's a free filesystem stat, versus a network round
+    # trip to Databricks to see whether `target` names a catalog. Anything that isn't a directory
+    # is assumed to be a catalog name; if it doesn't exist, extract_catalog raises NotFound below.
+    if target.is_dir():
+        fmt = _detect_fmt(target)
+        logger.info("Comparing catalog '%s' against %s...", args.catalog, target)
+        catalog_obj = extractor.extract_catalog(
+            catalog_name=args.catalog,
+            schema_filter=args.schema,
+            include_metadata=args.include_metadata,
+            include_tags=args.include_tags,
+        )
+        result = diff_catalog_with_dir(
+            catalog_obj,
+            target,
+            schema_names=schema_names,
+            fmt=fmt,
+            include_metadata=args.include_metadata,
+        )
+    else:
+        target_catalog = str(target)
+        logger.info("Comparing catalog '%s' against catalog '%s'...", args.catalog, target_catalog)
+        live = extractor.extract_catalog(
+            catalog_name=args.catalog,
+            schema_filter=args.schema,
+            include_metadata=args.include_metadata,
+            include_tags=args.include_tags,
+        )
+        stored = extractor.extract_catalog(
+            catalog_name=target_catalog,
+            schema_filter=args.schema,
+            include_metadata=args.include_metadata,
+            include_tags=args.include_tags,
+        )
+        result = diff_catalogs(
+            live,
+            stored,
+            schema_names=schema_names,
+            include_metadata=args.include_metadata,
+        )
 
     if not result.has_changes:
         print("No differences found.")
@@ -411,10 +426,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # diff
     diff_p = subparsers.add_parser(
-        "diff", help="Compare Unity Catalog schemas against local YAML files."
+        "diff",
+        help="Compare Unity Catalog schemas against local YAML/JSON files, or another catalog.",
     )
     diff_p.add_argument("catalog", help="Catalog name")
-    diff_p.add_argument("schema_dir", type=Path, help="Directory containing per-schema YAML files")
+    diff_p.add_argument(
+        "target",
+        type=Path,
+        help=(
+            "Directory containing per-schema YAML/JSON files, or the name of a second "
+            "catalog to compare directly"
+        ),
+    )
     diff_p.add_argument(
         "--schema",
         "-s",
