@@ -56,10 +56,18 @@ databricks-schema extract <catalog>
 # Whole catalog (or a filtered set of schemas) written to one file per schema
 databricks-schema extract <catalog> --output-dir ./schemas/
 databricks-schema extract <catalog> --schema main --schema raw --output-dir ./schemas/
+
+# A single schema or table can also be named directly, dotted onto the catalog —
+# output keeps the same Catalog/Schema shape, just filtered down. Cannot combine
+# with --schema.
+databricks-schema extract <catalog>.<schema>
+databricks-schema extract <catalog>.<schema>.<table>
 ```
 
 Notes:
 - `--schema` / `-s` is repeatable; omit it to extract every schema.
+- `<catalog>.<schema>` and `<catalog>.<schema>.<table>` are shortcuts for filtering to one schema
+  or one table; they exit with an error (code 2) if combined with `--schema`.
 - `--output-dir` writes one file per schema; omitting it prints one `Catalog` document to stdout
   (`name` + `schemas: [...]`) covering all matching schemas.
 - `--format json` / `-f json` writes `.json` instead of `.yaml` (same structure either way).

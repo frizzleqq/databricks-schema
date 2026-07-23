@@ -41,6 +41,7 @@ class CatalogExtractor:
         schema_filter: list[str] | None = None,
         include_metadata: bool = False,
         include_tags: bool = False,
+        table_filter: list[str] | None = None,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
             schema_name = sdk_schema.name or ""
@@ -48,7 +49,9 @@ class CatalogExtractor:
                 continue
             if schema_filter and schema_name not in schema_filter:
                 continue
-            yield self._extract_schema(catalog_name, sdk_schema, include_metadata, include_tags)
+            yield self._extract_schema(
+                catalog_name, sdk_schema, include_metadata, include_tags, table_filter
+            )
 
     def extract_catalog(
         self,
@@ -56,6 +59,7 @@ class CatalogExtractor:
         schema_filter: list[str] | None = None,
         include_metadata: bool = False,
         include_tags: bool = False,
+        table_filter: list[str] | None = None,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
         catalog_tags = self._fetch_tags("catalogs", catalog_name) if include_tags else {}
@@ -66,6 +70,7 @@ class CatalogExtractor:
                 schema_filter,
                 include_metadata,
                 include_tags,
+                table_filter,
             )
         )
 
@@ -82,6 +87,7 @@ class CatalogExtractor:
         sdk_schema,
         include_metadata: bool = False,
         include_tags: bool = False,
+        table_filter: list[str] | None = None,
     ) -> Schema:
         schema_name = sdk_schema.name or ""
         schema_tags = (
@@ -92,6 +98,8 @@ class CatalogExtractor:
         sdk_tables = list(
             self.client.tables.list(catalog_name=catalog_name, schema_name=schema_name)
         )
+        if table_filter:
+            sdk_tables = [t for t in sdk_tables if (t.name or "") in table_filter]
 
         def extract_one(sdk_table) -> Table:
             return self._extract_table(
