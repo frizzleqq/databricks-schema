@@ -144,6 +144,10 @@ uv run ruff format databricks_schema/ tests/
 databricks-schema [OPTIONS] COMMAND [ARGS]...
 ```
 
+`extract`, `diff`, `generate-sql`, and `diff-files` print progress messages (e.g. `Extracting
+catalog 'X'...`) to stderr as they run. Pass `--quiet` / `-q` to suppress them; results and
+errors are unaffected.
+
 ### `extract`
 
 Extract all schemas from a catalog to YAML files:
@@ -210,7 +214,7 @@ Include Unity Catalog tags in the comparison (excluded by default):
 databricks-schema diff <catalog> ./schemas/ --include-tags
 ```
 
-Include additional metadata (`owner`, `storage_location`) in the comparison:
+Include `owner` in the comparison (excluded by default):
 
 ```bash
 databricks-schema diff <catalog> ./schemas/ --include-metadata
@@ -262,7 +266,7 @@ Include Unity Catalog tags in the comparison (excluded by default):
 databricks-schema generate-sql <catalog> ./schemas/ --include-tags
 ```
 
-Include additional metadata (`owner`, `storage_location`) in the comparison:
+Include `owner` in the comparison (excluded by default):
 
 ```bash
 databricks-schema generate-sql <catalog> ./schemas/ --include-metadata
@@ -278,7 +282,8 @@ databricks-schema validate ./schemas/
 
 ### `diff-files`
 
-Compare two local directories of schema files (no Databricks connection needed):
+Compare two local directories of schema files (no Databricks connection needed). Same output,
+exit codes, and `--schema` / `--include-metadata` flags as `diff`:
 
 ```bash
 databricks-schema diff-files ./schemas-prod/ ./schemas-test/

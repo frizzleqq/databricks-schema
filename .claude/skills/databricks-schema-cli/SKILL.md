@@ -131,11 +131,10 @@ databricks-schema diff dev_catalog prod_catalog
 databricks-schema diff-files ./schemas-old/ ./schemas-new/
 ```
 
-For `diff`, the second argument is treated as a directory if one exists at that path on disk
-(checked first — it's a free local stat), otherwise it's treated as the name of a second catalog
-to compare against live. In the two-catalog form, the first `catalog` argument is the
-"live"/actual side and the second is the baseline/reference side, matching the directory form
-where the catalog is live and the directory is the baseline.
+For `diff`, the second argument is a directory path if one exists on disk, otherwise it's read as
+a second catalog name and both catalogs are extracted live. Either way, the first `catalog`
+argument is the "live"/actual side and the second (`target`) is the baseline/reference side —
+that ordering decides which side of each diff shows as `+`/`-`.
 
 Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 
@@ -154,7 +153,8 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 - `1` — differences found (this is normal, not a failure)
 - `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found)
 
-Same `--schema`, `--include-tags`, `--include-metadata` flags apply as for `extract`.
+Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
+adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.
 
 ## Validating schema files
 
@@ -180,7 +180,7 @@ make them executable. Treat this as a review-then-run step, not something to pip
 execution, especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) show up as
 `-- TODO: unsupported change: ...` comments rather than being silently dropped.
 
-Same `--schema`, `--include-tags`, `--include-metadata` filters apply as above.
+Same `--schema`, `--include-tags`, `--include-metadata` filters apply as for `diff`.
 
 ## Choosing the right command
 

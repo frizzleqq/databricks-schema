@@ -21,9 +21,9 @@ databricks_schema/
   models.py      # Pydantic v2 models: Catalog, Schema, Table, Column, PrimaryKey, ForeignKey
   extractor.py   # CatalogExtractor — wraps databricks-sdk
   yaml_io.py     # schema/catalog to/from YAML and JSON; _strip_empty removes None + empty collections
-  diff.py        # diff_schemas / diff_catalog_with_dir; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
+  diff.py        # diff_schemas / diff_catalogs / diff_catalog_with_dir / diff_schema_dirs; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
   sql_gen.py     # schema_diff_to_sql — pure SQL generation from SchemaDiff; no SDK/IO
-  cli.py         # argparse CLI: extract, diff, generate-sql, list-catalogs, list-schemas
+  cli.py         # argparse CLI: extract, diff, generate-sql, validate, diff-files, list-catalogs, list-schemas
   __init__.py    # public re-exports
 tests/
   test_models.py
@@ -31,6 +31,7 @@ tests/
   test_yaml_io.py
   test_diff.py       # pure model comparison, no SDK calls
   test_sql_gen.py    # pure SQL generation tests, no SDK calls
+  test_validate.py
 .claude/skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to drive the CLI
 ```
 
@@ -51,9 +52,11 @@ tests/
 - CLI: catalog is a required positional argument (not a flag)
 - `extract` `--format`/`-f` selects output format (`yaml` default, `json` opt-in); dest is `fmt`
 - `diff` auto-detects format from files present in the directory; exits 2 on mixed YAML+JSON
+- `diff`'s second positional arg is a directory if one exists at that path, else a second catalog name (`diff_catalogs`); first `catalog` arg is always the live side
 - `TableType` is re-exported from `databricks.sdk.service.catalog` — do not redefine it
-- `--include-metadata` flag (on `extract`, `diff`, `generate-sql`) enables `owner` + `storage_location`; both are excluded by default
+- `--include-metadata` flag (on `extract`, `diff`, `generate-sql`, `diff-files`) adds `owner` to output/comparison; `extract` additionally includes `storage_location` in its output (not compared by `diff`/`generate-sql`/`diff-files`); excluded by default
 - `--include-tags` flag (on `extract`, `diff`, `generate-sql`) enables Unity Catalog tag lookups; excluded by default
+- `--quiet`/`-q` flag (on `extract`, `diff`, `generate-sql`, `diff-files`) raises the log level to suppress progress messages; errors always print
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)
 - `generate-sql` auto-detects format from files; exits 2 on mixed YAML+JSON or empty directory
