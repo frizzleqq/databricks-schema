@@ -81,8 +81,33 @@ def _add_connection_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _split_catalog_arg(value: str) -> tuple[str, str | None, str | None]:
+    """Split `catalog[.schema[.table]]` into its parts. Exits 2 on too many segments."""
+    parts = value.split(".")
+    if len(parts) > 3:
+        print(
+            f"Error: invalid catalog argument {value!r} (expected catalog[.schema[.table]]).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    catalog_name = parts[0]
+    schema_name = parts[1] if len(parts) >= 2 else None
+    table_name = parts[2] if len(parts) == 3 else None
+    return catalog_name, schema_name, table_name
+
+
 def _cmd_extract(args: argparse.Namespace) -> None:
     """Extract Unity Catalog schemas to YAML or JSON files."""
+    catalog_name, schema_name, table_name = _split_catalog_arg(args.catalog)
+    if schema_name is not None and args.schema:
+        print(
+            "Error: cannot combine catalog.schema[.table] syntax with --schema.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    schema_filter = [schema_name] if schema_name is not None else args.schema
+    table_filter = [table_name] if table_name is not None else None
+
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
 
@@ -90,12 +115,13 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     catalog_serializer = catalog_to_json if args.fmt == "json" else catalog_to_yaml
     ext = ".json" if args.fmt == "json" else ".yaml"
 
-    logger.info("Extracting catalog '%s'...", args.catalog)
+    logger.info("Extracting catalog '%s'...", catalog_name)
 
     if args.output_dir is None:
         catalog_obj = extractor.extract_catalog(
-            catalog_name=args.catalog,
-            schema_filter=args.schema,
+            catalog_name=catalog_name,
+            schema_filter=schema_filter,
+            table_filter=table_filter,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
         )
@@ -106,8 +132,9 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     for s in extractor.iter_schemas(
-        catalog_name=args.catalog,
-        schema_filter=args.schema,
+        catalog_name=catalog_name,
+        schema_filter=schema_filter,
+        table_filter=table_filter,
         include_metadata=args.include_metadata,
         include_tags=args.include_tags,
     ):
@@ -377,7 +404,14 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_p = subparsers.add_parser(
         "extract", help="Extract Unity Catalog schemas to YAML files."
     )
-    extract_p.add_argument("catalog", help="Catalog name")
+    extract_p.add_argument(
+        "catalog",
+        help=(
+            "Catalog name, optionally with a schema and/or table to extract "
+            "(catalog, catalog.schema, or catalog.schema.table); "
+            "catalog.schema[.table] cannot be combined with --schema"
+        ),
+    )
     extract_p.add_argument(
         "--schema",
         "-s",

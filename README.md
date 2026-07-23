@@ -164,6 +164,13 @@ Extract specific schemas only:
 databricks-schema extract <catalog> --schema main --schema raw --output-dir ./schemas/
 ```
 
+Or extract a single schema or table by naming it directly, dotted onto the catalog (output keeps the same `Catalog`/`Schema` shape, just filtered down). This cannot be combined with `--schema`:
+
+```bash
+databricks-schema extract <catalog>.<schema>
+databricks-schema extract <catalog>.<schema>.<table>
+```
+
 Print to stdout instead of writing files (no `--output-dir`) — the catalog and its matching schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`):
 
 ```bash

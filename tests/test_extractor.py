@@ -89,6 +89,27 @@ class TestCatalogExtractor:
         assert len(catalog.schemas) == 1
         assert catalog.schemas[0].name == "keep"
 
+    def test_table_filter(self):
+        extractor, client = self._extractor()
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+
+        keep = _make_sdk_table("keep")
+        skip = _make_sdk_table("skip")
+        client.tables.list.return_value = [keep, skip]
+
+        catalog = extractor.extract_catalog("mycat", table_filter=["keep"])
+        tables = catalog.schemas[0].tables
+        assert len(tables) == 1
+        assert tables[0].name == "keep"
+
     def test_system_schema_always_skipped(self):
         extractor, client = self._extractor()
         sdk_catalog = MagicMock()
