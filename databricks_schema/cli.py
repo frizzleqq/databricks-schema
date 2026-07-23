@@ -455,7 +455,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--include-metadata",
         action="store_true",
         dest="include_metadata",
-        help="Include additional metadata in comparison (owner, storage_location)",
+        help="Include additional metadata in comparison (owner)",
     )
     diff_p.add_argument(
         "--workers",
@@ -508,7 +508,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--include-metadata",
         action="store_true",
         dest="include_metadata",
-        help="Include additional metadata in comparison (owner, storage_location)",
+        help="Include additional metadata in comparison (owner)",
     )
     gen_sql_p.add_argument(
         "--workers",
@@ -556,7 +556,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--include-metadata",
         action="store_true",
         dest="include_metadata",
-        help="Include owner in comparison",
+        help="Include additional metadata in comparison (owner)",
     )
     _add_quiet_arg(diff_files_p)
     diff_files_p.set_defaults(func=_cmd_diff_files)
