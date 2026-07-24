@@ -1,6 +1,6 @@
 # databricks-schema
 
-A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
+A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas in YAML format. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
 ## Getting Started
 
@@ -28,11 +28,67 @@ databricks-schema diff test_catalog ./schemas/
 databricks-schema generate-sql test_catalog ./schemas/ --output-dir ./migrations/
 ```
 
-The YAML files act as a version-controllable snapshot of your schema. The `diff` command exits with code `1` when differences are found, making it suitable for CI pipelines.
+## Databricks Authentication
+
+The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
+
+```bash
+export DATABRICKS_HOST=https://<databricks-url>
+export DATABRICKS_TOKEN=<your-personal-access-token>
+```
+
+Or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
+
+You can also pass credentials directly as flags using `--host` / `--token` below.
+
+## Development
+
+Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone https://github.com/frizzleqq/databricks-schema
+cd databricks-schema
+uv sync --all-groups  # includes pytest and ruff
+```
+
+```bash
+# Run tests
+uv run pytest
+
+# Lint
+uv run ruff check databricks_schema/ tests/
+
+# Format
+uv run ruff format databricks_schema/ tests/
+```
+
+## Agent Skill
+
+This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
+[`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
+that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
+explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Copy the skill into
+your own project and it can use the CLI directly instead of writing ad-hoc Databricks SDK calls
+or queries.
+
+The skill assumes the `databricks-schema` command is on `PATH`. Install it as a standalone tool
+with [uv](https://github.com/astral-sh/uv):
+
+```bash
+uv tool install databricks-schema
+```
+
+To use the skill in your own project without cloning this repo, download it directly:
+
+```bash
+mkdir -p .claude/skills/databricks-schema-cli
+curl -o .claude/skills/databricks-schema-cli/SKILL.md \
+  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/.claude/skills/databricks-schema-cli/SKILL.md
+```
 
 ## Output Format
 
-Each schema is written to `{output-dir}/{schema-name}.yaml`. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
+Each schema is written to `{output-dir}/{schema-name}.yaml` if `--output-dir` is specified. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
 
 ```yaml
 name: main
@@ -80,73 +136,30 @@ schemas:
     tables: [...]
 ```
 
-## Authentication
-
-The tool uses the [Databricks SDK](https://github.com/databricks/databricks-sdk-py) for auth. Configure it via environment variables:
-
-```bash
-export DATABRICKS_HOST=https://<databricks-url>
-export DATABRICKS_TOKEN=<your-personal-access-token>
-```
-
-Or use a [Databricks CLI profile](https://docs.databricks.com/dev-tools/cli/profiles.html) (`~/.databrickscfg`) — the SDK will pick it up automatically.
-
-You can also pass credentials directly as flags (see `--host` / `--token` below).
-
-## Agent Skill
-
-This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
-[`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
-that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
-explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Point an agent at
-this repo (or copy the skill into your own project) and it can use the CLI directly instead of
-writing ad-hoc Databricks SDK calls.
-
-The skill assumes the `databricks-schema` command is on `PATH`. Install it as a standalone tool
-with [uv](https://github.com/astral-sh/uv):
-
-```bash
-uv tool install databricks-schema
-```
-
-To use the skill in your own project without cloning this repo, download it directly:
-
-```bash
-mkdir -p .claude/skills/databricks-schema-cli
-curl -o .claude/skills/databricks-schema-cli/SKILL.md \
-  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/.claude/skills/databricks-schema-cli/SKILL.md
-```
-
-## Development
-
-Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone https://github.com/frizzleqq/databricks-schema
-cd databricks-schema
-uv sync --all-groups  # includes pytest and ruff
-```
-
-```bash
-# Run tests
-uv run pytest
-
-# Lint
-uv run ruff check databricks_schema/ tests/
-
-# Format
-uv run ruff format databricks_schema/ tests/
-```
-
 ## CLI Usage
 
 ```
 databricks-schema [OPTIONS] COMMAND [ARGS]...
 ```
 
-`extract`, `diff`, `generate-sql`, and `diff-files` print progress messages (e.g. `Extracting
-catalog 'X'...`) to stderr as they run. Pass `--quiet` / `-q` to suppress them; results and
-errors are unaffected.
+`extract`, `diff`, `generate-sql`, and `diff-files` print progress messages (e.g. `Extracting catalog 'X'...`) to stderr as they run. Pass `--quiet` / `-q` to suppress them;
+results and errors are unaffected.
+
+### `list-catalogs`
+
+List all accessible catalogs:
+
+```bash
+databricks-schema list-catalogs
+```
+
+### `list-schemas`
+
+List schemas in a catalog:
+
+```bash
+databricks-schema list-schemas <catalog>
+```
 
 ### `extract`
 
@@ -156,7 +169,11 @@ Extract all schemas from a catalog to YAML files:
 databricks-schema extract <catalog> --output-dir ./schemas/
 ```
 
-Use `--format json` to write `.json` files instead of `.yaml`.
+Print to stdout instead of writing files (no `--output-dir`) — the catalog and its schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`):
+
+```bash
+databricks-schema extract <catalog>
+```
 
 Extract specific schemas only:
 
@@ -171,12 +188,6 @@ databricks-schema extract <catalog>.<schema>
 databricks-schema extract <catalog>.<schema>.<table>
 ```
 
-Print to stdout instead of writing files (no `--output-dir`) — the catalog and its matching schemas are printed as a single `Catalog` document (`name` + `schemas: [...]`):
-
-```bash
-databricks-schema extract <catalog> --schema main
-```
-
 Include Unity Catalog tags in the output (extra API calls per entity; excluded by default):
 
 ```bash
@@ -189,7 +200,7 @@ Include additional metadata (`owner`, `storage_location`) in the output:
 databricks-schema extract <catalog> --output-dir ./schemas/ --include-metadata
 ```
 
-Control the number of parallel workers (default: 4):
+Control the number of parallel workers (default: 4), useful for large schemas with many tags:
 
 ```bash
 databricks-schema extract <catalog> --output-dir ./schemas/ --workers 8
@@ -203,7 +214,21 @@ Compare the live catalog against previously extracted schema files (format auto-
 databricks-schema diff <catalog> ./schemas/
 ```
 
-Or compare two live catalogs directly, e.g. dev against prod — no local files needed. The second argument is treated as a directory if one exists at that path, otherwise as a catalog name:
+Exits with code `0` if no differences are found, `1` if there are — making it suitable for CI pipelines. Output example:
+
+```
+~ Schema: main [MODIFIED]
+  ~ Table: users [MODIFIED]
+    ~ Column: score [MODIFIED]
+        data_type: 'int' -> 'double'
+    + Column: phone [ADDED]
+  + Table: events [ADDED]
+- Schema: legacy [REMOVED]
+```
+
+Markers: `+` added in catalog, `-` removed from catalog, `~` modified.
+
+Or compare two live catalogs directly, e.g. dev against prod. The second argument is treated as a directory if one exists at that path, otherwise as a catalog name:
 
 ```bash
 databricks-schema diff dev_catalog prod_catalog
@@ -226,20 +251,6 @@ Include `owner` in the comparison (excluded by default):
 ```bash
 databricks-schema diff <catalog> ./schemas/ --include-metadata
 ```
-
-Exits with code `0` if no differences are found, `1` if there are — making it suitable for CI pipelines. Output example:
-
-```
-~ Schema: main [MODIFIED]
-  ~ Table: users [MODIFIED]
-    ~ Column: score [MODIFIED]
-        data_type: 'int' -> 'double'
-    + Column: phone [ADDED]
-  + Table: events [ADDED]
-- Schema: legacy [REMOVED]
-```
-
-Markers: `+` added in catalog, `-` removed from catalog, `~` modified.
 
 ### `generate-sql`
 
@@ -294,22 +305,6 @@ exit codes, and `--schema` / `--include-metadata` flags as `diff`:
 
 ```bash
 databricks-schema diff-files ./schemas-prod/ ./schemas-test/
-```
-
-### `list-catalogs`
-
-List all accessible catalogs:
-
-```bash
-databricks-schema list-catalogs
-```
-
-### `list-schemas`
-
-List schemas in a catalog:
-
-```bash
-databricks-schema list-schemas <catalog>
 ```
 
 ## Python Library Usage
