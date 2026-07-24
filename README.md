@@ -67,9 +67,9 @@ uv run ruff format databricks_schema/ tests/
 This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
 [`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
 that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
-explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Point an agent at
-this repo (or copy the skill into your own project) and it can use the CLI directly instead of
-writing ad-hoc Databricks SDK calls.
+explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Copy the skill into
+your own project and it can use the CLI directly instead of writing ad-hoc Databricks SDK calls
+or queries.
 
 The skill assumes the `databricks-schema` command is on `PATH`. Install it as a standalone tool
 with [uv](https://github.com/astral-sh/uv):
