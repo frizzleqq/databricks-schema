@@ -6,14 +6,13 @@ description: Explore, snapshot, diff, and generate migration SQL for Databricks 
 # Databricks Unity Catalog exploration (`databricks-schema`)
 
 `databricks-schema` is a CLI that talks to a Databricks workspace via the Databricks SDK and
-represents Unity Catalog schemas as YAML/JSON files — one file per schema. Use it instead of
+represents Unity Catalog schemas as YAML or JSON output. Use it instead of
 writing ad-hoc SDK calls whenever the task is "look at / snapshot / diff / generate SQL for" a
 Unity Catalog schema.
 
-Call it as `databricks-schema <command> ...`. If the command isn't found, install it first (see
-`README.md`, e.g. `uv tool install databricks-schema`). Run `databricks-schema <command> --help`
-to confirm exact flags before relying on this document for anything unusual — this skill covers
-the common path, not every flag.
+Call it as `databricks-schema <command> ...`. If the command isn't found, install it first (e.g.
+`uv tool install databricks-schema`). Run `databricks-schema <command> --help`
+to confirm exact CLI usage.
 
 ## Authentication
 
@@ -30,10 +29,9 @@ the catalog/schema name itself is wrong.
 ## Reducing noise for agentic use
 
 `extract`, `diff`, `generate-sql`, and `diff-files` print progress lines (e.g. `Extracting
-catalog 'X'...`, `Comparing catalog 'X' against ...`) to stderr before/while they run. Pass
+catalog 'X'...`, `Comparing catalog 'X' against ...`) to stderr while they run. Pass
 `--quiet` / `-q` to suppress them — the actual result (extracted YAML/JSON, diff tree, generated
-SQL, exit code) is unaffected; only the informational narration is dropped. Errors are always
-printed regardless of `--quiet`.
+SQL, exit code) is unaffected. Errors are always printed regardless of `--quiet`.
 
 ## Orienting yourself in a workspace
 
