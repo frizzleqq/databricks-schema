@@ -40,8 +40,9 @@ databricks-schema list-catalogs              # what catalogs can I see?
 databricks-schema list-schemas <catalog>      # what schemas are in this catalog?
 ```
 
-Both just print names, one per line — good for a quick scan or for building a `--schema` filter
-list for the commands below.
+Both print names, one per line — good for a quick scan or for building a `--schema` filter
+list for the commands below. Pass `--format json` / `-f json` to get a JSON array of names
+instead (e.g. `["main", "raw"]`).
 
 ## Pulling a schema into a readable snapshot
 
@@ -162,6 +163,12 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
 adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.
 
+Pass `--format json` / `-f json` (on both `diff` and `diff-files`) instead of the `+`/`-`/`~` tree
+to get the same comparison as structured JSON — a `{"schemas": [...]}` document with per-schema
+`status` (`added`/`removed`/`modified`/`unchanged`), `changes` (field-level `old`/`new` pairs), and
+nested `tables`/`columns`. Exit codes are unchanged. Run `databricks-schema json-schema diff` to
+get the exact JSON Schema for this shape before parsing it.
+
 ## Validating schema files
 
 ```bash
@@ -170,7 +177,9 @@ databricks-schema validate ./schemas/
 
 Checks structural integrity of local YAML/JSON files with no Databricks connection (e.g. after
 hand-editing one). Exits `0` and prints `OK — N schema(s) validated` on success, `1` with an
-`ERROR:` line per issue otherwise.
+`ERROR:` line per issue otherwise. Pass `--format json` for a `{"issues": [...]}` document instead
+(each issue has `schema`, `table`, `message`) — see `databricks-schema json-schema validate` for
+its JSON Schema.
 
 ## Generating migration SQL
 
@@ -188,6 +197,19 @@ execution, especially with `--allow-drop`. Unsupported changes (e.g. `table_type
 
 Same `--schema`, `--include-tags`, `--include-metadata` filters apply as for `diff`.
 
+## Introspecting output shapes before parsing them
+
+```bash
+databricks-schema json-schema catalog    # shape of extract's stdout Catalog document
+databricks-schema json-schema schema     # shape of one per-schema extract file
+databricks-schema json-schema diff       # shape of diff / diff-files --format json
+databricks-schema json-schema validate   # shape of validate --format json
+```
+
+Prints the JSON Schema for that model/output to stdout — no Databricks connection needed. If
+you're about to parse `--format json` output (or extract's YAML/JSON) programmatically and aren't
+already sure of its exact fields, run this first instead of guessing from an example.
+
 ## Choosing the right command
 
 | Want to...                                              | Command        |
@@ -199,3 +221,4 @@ Same `--schema`, `--include-tags`, `--include-metadata` filters apply as for `di
 | Check if two snapshot directories differ (no live access) | `diff-files` |
 | Sanity-check hand-edited YAML/JSON before using it         | `validate` |
 | Produce SQL to reconcile live catalog with a snapshot      | `generate-sql` |
+| Get the exact shape of any of the above before parsing it | `json-schema` |
