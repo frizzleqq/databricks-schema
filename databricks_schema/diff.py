@@ -218,6 +218,7 @@ def diff_catalog_with_dir(
     schema_dir: Path,
     ignore_added: frozenset[str] = frozenset({"default"}),
     schema_names: frozenset[str] | None = None,
+    table_names: frozenset[str] | None = None,
     fmt: Literal["yaml", "json"] = "yaml",
     include_metadata: bool = False,
 ) -> CatalogDiff:
@@ -233,6 +234,9 @@ def diff_catalog_with_dir(
     schema_names: if set, only files whose stem is in this set are loaded.
                   Use this when comparing a subset of schemas to avoid reporting
                   unrelated schemas as removed.
+    table_names: if set, each loaded schema's tables are narrowed to this set before
+                 comparison. `catalog` is expected to already be filtered to the same
+                 tables (e.g. via CatalogExtractor's table_filter), so both sides match.
     fmt: file format to read ("yaml" or "json").
     """
     ext = ".json" if fmt == "json" else ".yaml"
@@ -242,6 +246,10 @@ def diff_catalog_with_dir(
         if schema_names is not None and schema_file.stem not in schema_names:
             continue
         schema = loader(schema_file.read_text(encoding="utf-8"))
+        if table_names is not None:
+            schema = schema.model_copy(
+                update={"tables": [t for t in schema.tables if t.name in table_names]}
+            )
         stored[schema.name] = schema
 
     live = {s.name: s for s in catalog.schemas}

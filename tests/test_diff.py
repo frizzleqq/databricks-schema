@@ -249,6 +249,29 @@ class TestDiffCatalogWithDir:
         assert not result.has_changes
         assert result.schemas[0].status == "unchanged"
 
+    def test_table_names_filter_prevents_false_removed(self, tmp_path: Path):
+        # main.yaml has both "users" and "orders", but we only compare "users"
+        stored = _schema("main", tables=[_table("users"), _table("orders")])
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
+        # catalog only contains "users" (as if --table users was passed to extraction)
+        catalog = Catalog(name="prod", schemas=[_schema("main", tables=[_table("users")])])
+        result = diff_catalog_with_dir(catalog, tmp_path, table_names=frozenset({"users"}))
+        assert not result.has_changes
+        assert not any(t.name == "orders" for t in result.schemas[0].tables)
+
+    def test_table_names_filter_detects_modification(self, tmp_path: Path):
+        stored = _schema(
+            "main", tables=[_table("users", comment="old"), _table("orders", comment="old")]
+        )
+        (tmp_path / "main.yaml").write_text(schema_to_yaml(stored))
+        catalog = Catalog(
+            name="prod", schemas=[_schema("main", tables=[_table("users", comment="new")])]
+        )
+        result = diff_catalog_with_dir(catalog, tmp_path, table_names=frozenset({"users"}))
+        assert result.has_changes
+        assert len(result.schemas[0].tables) == 1
+        assert result.schemas[0].tables[0].name == "users"
+
 
 class TestDiffCatalogs:
     def test_no_changes(self):

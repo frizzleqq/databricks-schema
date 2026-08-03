@@ -161,7 +161,9 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 - `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found)
 
 Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
-adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.
+adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed. `--table` / `-t`
+(repeatable) additionally filters down to specific tables within the compared schema(s) — the
+output tree/document shape is unchanged, just narrowed.
 
 Pass `--format json` / `-f json` (or `--format yaml`, on both `diff` and `diff-files`) instead of
 the `+`/`-`/`~` tree to get the same comparison as structured JSON/YAML — a `{"schemas": [...]}`

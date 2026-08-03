@@ -185,6 +185,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
     """Compare Unity Catalog schemas against local YAML/JSON files, or against another catalog."""
     target: Path = args.target
     schema_names = frozenset(args.schema) if args.schema else None
+    table_names = frozenset(args.table) if args.table else None
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
@@ -200,11 +201,13 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
+            table_filter=args.table,
         )
         result = diff_catalog_with_dir(
             catalog_obj,
             target,
             schema_names=schema_names,
+            table_names=table_names,
             fmt=fmt,
             include_metadata=args.include_metadata,
         )
@@ -216,12 +219,14 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
+            table_filter=args.table,
         )
         stored = extractor.extract_catalog(
             catalog_name=target_catalog,
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
+            table_filter=args.table,
         )
         result = diff_catalogs(
             live,
@@ -551,6 +556,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="SCHEMA",
         help="Schema filter (repeatable)",
+    )
+    diff_p.add_argument(
+        "--table",
+        "-t",
+        action="append",
+        metavar="TABLE",
+        help="Table filter (repeatable)",
     )
     diff_p.add_argument(
         "--include-tags",
