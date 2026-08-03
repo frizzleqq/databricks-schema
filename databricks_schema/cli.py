@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
+from dataclasses import asdict
+from enum import Enum
 from pathlib import Path
+from typing import Any
 
+import yaml
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import DatabricksError, NotFound, PermissionDenied, Unauthenticated
+from pydantic import BaseModel, TypeAdapter
 
 from databricks_schema.diff import (
     CatalogDiff,
@@ -18,9 +24,9 @@ from databricks_schema.diff import (
     diff_schemas,
 )
 from databricks_schema.extractor import CatalogExtractor
-from databricks_schema.models import Schema
+from databricks_schema.models import Catalog, Schema
 from databricks_schema.sql_gen import schema_diff_to_sql
-from databricks_schema.validate import validate_schemas
+from databricks_schema.validate import ValidationResult, validate_schemas
 from databricks_schema.yaml_io import (
     catalog_to_json,
     catalog_to_yaml,
@@ -66,6 +72,35 @@ def _add_quiet_arg(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Suppress informational progress messages (errors are still printed)",
     )
+
+
+def _add_output_format_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=["text", "json", "yaml"],
+        default="text",
+        dest="output_format",
+        help="Output format: human-readable text (default), or machine-readable JSON/YAML "
+        "(see 'json-schema' command for the shape)",
+    )
+
+
+def _json_default(obj: Any) -> Any:
+    """json.dumps default= hook for dataclasses holding Pydantic models or enums."""
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, Enum):
+        return obj.value
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def _serialize_structured(data: Any, fmt: str) -> str:
+    """Serialize a dict/list (possibly holding Pydantic models or enums) as JSON or YAML."""
+    plain = json.loads(json.dumps(data, default=_json_default))
+    if fmt == "yaml":
+        return yaml.dump(plain, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return json.dumps(plain, indent=2)
 
 
 def _add_connection_args(parser: argparse.ArgumentParser) -> None:
@@ -194,6 +229,12 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             schema_names=schema_names,
             include_metadata=args.include_metadata,
         )
+
+    if args.output_format in ("json", "yaml"):
+        print(_serialize_structured(asdict(result), args.output_format))
+        if result.has_changes:
+            sys.exit(1)
+        return
 
     if not result.has_changes:
         print("No differences found.")
@@ -337,6 +378,13 @@ def _cmd_validate(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     result = validate_schemas(schemas)
+
+    if args.output_format in ("json", "yaml"):
+        print(_serialize_structured(asdict(result), args.output_format))
+        if result.has_errors:
+            sys.exit(1)
+        return
+
     if not result.has_errors:
         print(f"OK — {len(schemas)} schema(s) validated, no issues found.")
         return
@@ -369,6 +417,12 @@ def _cmd_diff_files(args: argparse.Namespace) -> None:
         include_metadata=args.include_metadata,
     )
 
+    if args.output_format in ("json", "yaml"):
+        print(_serialize_structured(asdict(result), args.output_format))
+        if result.has_changes:
+            sys.exit(1)
+        return
+
     if not result.has_changes:
         print("No differences found.")
         return
@@ -380,15 +434,34 @@ def _cmd_diff_files(args: argparse.Namespace) -> None:
 def _cmd_list_catalogs(args: argparse.Namespace) -> None:
     """List all accessible catalogs."""
     client = _make_client(args.host, args.token)
-    for name in sorted(c.name for c in client.catalogs.list()):
+    names = sorted(c.name for c in client.catalogs.list())
+    if args.output_format in ("json", "yaml"):
+        print(_serialize_structured(names, args.output_format))
+        return
+    for name in names:
         print(name)
 
 
 def _cmd_list_schemas(args: argparse.Namespace) -> None:
     """List schemas in a catalog."""
     client = _make_client(args.host, args.token)
-    for name in sorted(s.name for s in client.schemas.list(catalog_name=args.catalog)):
+    names = sorted(s.name for s in client.schemas.list(catalog_name=args.catalog))
+    if args.output_format in ("json", "yaml"):
+        print(_serialize_structured(names, args.output_format))
+        return
+    for name in names:
         print(name)
+
+
+def _cmd_json_schema(args: argparse.Namespace) -> None:
+    """Print the JSON Schema for a model or a command's JSON/YAML output shape."""
+    schema_getters = {
+        "catalog": Catalog.model_json_schema,
+        "schema": Schema.model_json_schema,
+        "diff": lambda: TypeAdapter(CatalogDiff).json_schema(),
+        "validate": lambda: TypeAdapter(ValidationResult).json_schema(),
+    }
+    print(_serialize_structured(schema_getters[args.model](), args.fmt))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -498,6 +571,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of parallel workers for table extraction (default: 4)",
     )
+    _add_output_format_arg(diff_p)
     _add_quiet_arg(diff_p)
     _add_connection_args(diff_p)
     diff_p.set_defaults(func=_cmd_diff)
@@ -570,6 +644,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SCHEMA",
         help="Schema filter (repeatable)",
     )
+    _add_output_format_arg(validate_p)
     validate_p.set_defaults(func=_cmd_validate)
 
     # diff-files
@@ -592,19 +667,46 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="include_metadata",
         help="Include additional metadata in comparison (owner)",
     )
+    _add_output_format_arg(diff_files_p)
     _add_quiet_arg(diff_files_p)
     diff_files_p.set_defaults(func=_cmd_diff_files)
 
     # list-catalogs
     list_catalogs_p = subparsers.add_parser("list-catalogs", help="List all accessible catalogs.")
+    _add_output_format_arg(list_catalogs_p)
     _add_connection_args(list_catalogs_p)
     list_catalogs_p.set_defaults(func=_cmd_list_catalogs)
 
     # list-schemas
     list_schemas_p = subparsers.add_parser("list-schemas", help="List schemas in a catalog.")
     list_schemas_p.add_argument("catalog", help="Catalog name")
+    _add_output_format_arg(list_schemas_p)
     _add_connection_args(list_schemas_p)
     list_schemas_p.set_defaults(func=_cmd_list_schemas)
+
+    # json-schema
+    json_schema_p = subparsers.add_parser(
+        "json-schema",
+        help="Print the JSON Schema for a model or a command's --format json output shape.",
+    )
+    json_schema_p.add_argument(
+        "model",
+        choices=["catalog", "schema", "diff", "validate"],
+        help=(
+            "Which shape to describe: 'catalog'/'schema' match extract's output; "
+            "'diff' matches diff/diff-files --format json/yaml; 'validate' matches "
+            "validate --format json/yaml"
+        ),
+    )
+    json_schema_p.add_argument(
+        "--format",
+        "-f",
+        choices=["json", "yaml"],
+        default="json",
+        dest="fmt",
+        help="Output format for the schema itself (default: json)",
+    )
+    json_schema_p.set_defaults(func=_cmd_json_schema)
 
     return parser
 

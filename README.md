@@ -161,6 +161,9 @@ List schemas in a catalog:
 databricks-schema list-schemas <catalog>
 ```
 
+Both print one name per line by default. Pass `--format json` / `-f json` (or `--format yaml`) to
+get the names as a JSON array or YAML list instead.
+
 ### `extract`
 
 Extract all schemas from a catalog to YAML files:
@@ -252,6 +255,13 @@ Include `owner` in the comparison (excluded by default):
 databricks-schema diff <catalog> ./schemas/ --include-metadata
 ```
 
+Get the same comparison as structured JSON or YAML instead of the `+`/`-`/`~` tree (exit codes unchanged) — useful for scripts or agents:
+
+```bash
+databricks-schema diff <catalog> ./schemas/ --format json
+databricks-schema diff <catalog> ./schemas/ --format yaml
+```
+
 ### `generate-sql`
 
 Generate Databricks Spark SQL statements to bring the live catalog in line with local schema files (format auto-detected, YAML or JSON, not mixed). Statements are printed to stdout by default:
@@ -298,13 +308,28 @@ Validate local schema files for structural integrity (no Databricks connection n
 databricks-schema validate ./schemas/
 ```
 
+Pass `--format json` or `--format yaml` for an `{"issues": [...]}` document instead of `OK`/`ERROR:` text.
+
 ### `diff-files`
 
 Compare two local directories of schema files (no Databricks connection needed). Same output,
-exit codes, and `--schema` / `--include-metadata` flags as `diff`:
+exit codes, `--format json`/`yaml`, and `--schema` / `--include-metadata` flags as `diff`:
 
 ```bash
 databricks-schema diff-files ./schemas-prod/ ./schemas-test/
+```
+
+### `json-schema`
+
+Print the JSON Schema for one of the CLI's structured output shapes — no Databricks connection
+needed. Useful before parsing `--format json`/`yaml` output (or `extract`'s output)
+programmatically. Add `--format yaml` to render the schema itself as YAML:
+
+```bash
+databricks-schema json-schema catalog    # extract's stdout Catalog document
+databricks-schema json-schema schema     # one per-schema extract file
+databricks-schema json-schema diff       # diff / diff-files --format json/yaml
+databricks-schema json-schema validate   # validate --format json/yaml
 ```
 
 ## Python Library Usage
