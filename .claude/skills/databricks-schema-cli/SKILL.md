@@ -134,14 +134,27 @@ databricks-schema diff <catalog> ./schemas/
 # Live catalog vs. another live catalog (e.g. dev vs. prod) — no local files needed
 databricks-schema diff dev_catalog prod_catalog
 
+# Both sides dotted to a single schema or table — the names don't have to match, so this
+# also covers comparing e.g. a `_test` copy of a schema/table against the "real" one, in the
+# same catalog or a different one
+databricks-schema diff mycat.orders mycat.orders_test
+databricks-schema diff mycat.sales.orders othercat.sales.orders_v2
+
 # Two local directories, no Databricks connection needed
 databricks-schema diff-files ./schemas-old/ ./schemas-new/
 ```
 
 For `diff`, the second argument is a directory path if one exists on disk, otherwise it's read as
-a second catalog name and both catalogs are extracted live. Either way, the first `catalog`
-argument is the "live"/actual side and the second (`target`) is the baseline/reference side —
-that ordering decides which side of each diff shows as `+`/`-`.
+a second catalog name (optionally dotted) and both catalogs are extracted live. Either way, the
+first `catalog` argument is the "live"/actual side and the second (`target`) is the
+baseline/reference side — that ordering decides which side of each diff shows as `+`/`-`.
+
+`catalog` and `target` can each be dotted as `catalog.schema` or `catalog.schema.table` when
+comparing two catalogs (not against a directory). Both sides must use the same depth — e.g.
+`mycat.orders` against `othercat` is an error — but the schema/table *names* don't need to match
+across sides, which is the way to diff two differently-named schemas or tables directly. Dotted
+syntax can't be combined with `--schema`, and can't be used on `catalog` when `target` is a
+directory (use `--schema` there instead).
 
 Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 
@@ -158,7 +171,8 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 **Exit codes matter — use them instead of parsing stdout when you just need a yes/no:**
 - `0` — no differences
 - `1` — differences found (this is normal, not a failure)
-- `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found)
+- `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found,
+  mismatched dotted-argument depth, or dotted syntax combined with `--schema`/a directory target)
 
 Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
 adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.

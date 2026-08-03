@@ -22,9 +22,10 @@ from databricks_schema.diff import (
     diff_catalogs,
     diff_schema_dirs,
     diff_schemas,
+    diff_table_pair,
 )
 from databricks_schema.extractor import CatalogExtractor
-from databricks_schema.models import Catalog, Schema
+from databricks_schema.models import Catalog, Schema, Table
 from databricks_schema.sql_gen import schema_diff_to_sql
 from databricks_schema.validate import ValidationResult, validate_schemas
 from databricks_schema.yaml_io import (
@@ -131,6 +132,31 @@ def _split_catalog_arg(value: str) -> tuple[str, str | None, str | None]:
     return catalog_name, schema_name, table_name
 
 
+def _find_schema(catalog_obj: Catalog, schema_name: str) -> Schema:
+    """Look up a schema by name in an extracted Catalog. Exits 2 if not present."""
+    for s in catalog_obj.schemas:
+        if s.name == schema_name:
+            return s
+    print(
+        f"Error: schema '{schema_name}' not found in catalog '{catalog_obj.name}'.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+def _find_table(catalog_obj: Catalog, schema_name: str, table_name: str) -> Table:
+    """Look up a table by name within a schema of an extracted Catalog. Exits 2 if not present."""
+    schema = _find_schema(catalog_obj, schema_name)
+    for t in schema.tables:
+        if t.name == table_name:
+            return t
+    print(
+        f"Error: table '{table_name}' not found in schema '{catalog_obj.name}.{schema_name}'.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
 def _cmd_extract(args: argparse.Namespace) -> None:
     """Extract Unity Catalog schemas to YAML or JSON files."""
     catalog_name, schema_name, table_name = _split_catalog_arg(args.catalog)
@@ -184,19 +210,48 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 def _cmd_diff(args: argparse.Namespace) -> None:
     """Compare Unity Catalog schemas against local YAML/JSON files, or against another catalog."""
     target: Path = args.target
-    schema_names = frozenset(args.schema) if args.schema else None
-
-    client = _make_client(args.host, args.token)
-    extractor = CatalogExtractor(client=client, max_workers=args.workers)
+    live_catalog, live_schema, live_table = _split_catalog_arg(args.catalog)
 
     # A local directory is checked first — it's a free filesystem stat, versus a network round
     # trip to Databricks to see whether `target` names a catalog. Anything that isn't a directory
     # is assumed to be a catalog name; if it doesn't exist, extract_catalog raises NotFound below.
-    if target.is_dir():
+    is_dir_target = target.is_dir()
+    target_catalog = target_schema = target_table = None
+    if is_dir_target:
+        if live_schema is not None:
+            print(
+                "Error: cannot combine catalog.schema[.table] syntax with a directory target; "
+                "use --schema instead.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    else:
+        target_catalog, target_schema, target_table = _split_catalog_arg(str(target))
+        if (live_schema is not None or target_schema is not None) and args.schema:
+            print(
+                "Error: cannot combine catalog.schema[.table] syntax with --schema.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if (live_schema is None) != (target_schema is None) or (live_table is None) != (
+            target_table is None
+        ):
+            print(
+                "Error: both sides must specify the same depth "
+                "(catalog, catalog.schema, or catalog.schema.table).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    client = _make_client(args.host, args.token)
+    extractor = CatalogExtractor(client=client, max_workers=args.workers)
+
+    if is_dir_target:
+        schema_names = frozenset(args.schema) if args.schema else None
         fmt = _detect_fmt(target)
-        logger.info("Comparing catalog '%s' against %s...", args.catalog, target)
+        logger.info("Comparing catalog '%s' against %s...", live_catalog, target)
         catalog_obj = extractor.extract_catalog(
-            catalog_name=args.catalog,
+            catalog_name=live_catalog,
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
@@ -209,26 +264,86 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             include_metadata=args.include_metadata,
         )
     else:
-        target_catalog = str(target)
-        logger.info("Comparing catalog '%s' against catalog '%s'...", args.catalog, target_catalog)
-        live = extractor.extract_catalog(
-            catalog_name=args.catalog,
-            schema_filter=args.schema,
-            include_metadata=args.include_metadata,
-            include_tags=args.include_tags,
-        )
-        stored = extractor.extract_catalog(
-            catalog_name=target_catalog,
-            schema_filter=args.schema,
-            include_metadata=args.include_metadata,
-            include_tags=args.include_tags,
-        )
-        result = diff_catalogs(
-            live,
-            stored,
-            schema_names=schema_names,
-            include_metadata=args.include_metadata,
-        )
+        if live_table is not None:
+            logger.info(
+                "Comparing table '%s.%s.%s' against '%s.%s.%s'...",
+                live_catalog,
+                live_schema,
+                live_table,
+                target_catalog,
+                target_schema,
+                target_table,
+            )
+            live_catalog_obj = extractor.extract_catalog(
+                catalog_name=live_catalog,
+                schema_filter=[live_schema],
+                table_filter=[live_table],
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            stored_catalog_obj = extractor.extract_catalog(
+                catalog_name=target_catalog,
+                schema_filter=[target_schema],
+                table_filter=[target_table],
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            live_t = _find_table(live_catalog_obj, live_schema, live_table)
+            stored_t = _find_table(stored_catalog_obj, target_schema, target_table)
+            table_diff = diff_table_pair(live_t, stored_t, args.include_metadata)
+            schema_status = "unchanged" if table_diff.status == "unchanged" else "modified"
+            schema_diff = SchemaDiff(
+                name=live_schema,
+                status=schema_status,
+                tables=[] if table_diff.status == "unchanged" else [table_diff],
+            )
+            result = CatalogDiff(schemas=[schema_diff])
+        elif live_schema is not None:
+            logger.info(
+                "Comparing schema '%s.%s' against '%s.%s'...",
+                live_catalog,
+                live_schema,
+                target_catalog,
+                target_schema,
+            )
+            live_catalog_obj = extractor.extract_catalog(
+                catalog_name=live_catalog,
+                schema_filter=[live_schema],
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            stored_catalog_obj = extractor.extract_catalog(
+                catalog_name=target_catalog,
+                schema_filter=[target_schema],
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            live_s = _find_schema(live_catalog_obj, live_schema)
+            stored_s = _find_schema(stored_catalog_obj, target_schema)
+            result = CatalogDiff(schemas=[diff_schemas(live_s, stored_s, args.include_metadata)])
+        else:
+            schema_names = frozenset(args.schema) if args.schema else None
+            logger.info(
+                "Comparing catalog '%s' against catalog '%s'...", live_catalog, target_catalog
+            )
+            live = extractor.extract_catalog(
+                catalog_name=live_catalog,
+                schema_filter=args.schema,
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            stored = extractor.extract_catalog(
+                catalog_name=target_catalog,
+                schema_filter=args.schema,
+                include_metadata=args.include_metadata,
+                include_tags=args.include_tags,
+            )
+            result = diff_catalogs(
+                live,
+                stored,
+                schema_names=schema_names,
+                include_metadata=args.include_metadata,
+            )
 
     if args.output_format in ("json", "yaml"):
         print(_serialize_structured(asdict(result), args.output_format))
@@ -536,13 +651,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "diff",
         help="Compare Unity Catalog schemas against local YAML/JSON files, or another catalog.",
     )
-    diff_p.add_argument("catalog", help="Catalog name")
+    diff_p.add_argument(
+        "catalog",
+        help=(
+            "Catalog name, optionally with a schema and/or table to compare "
+            "(catalog, catalog.schema, or catalog.schema.table); "
+            "catalog.schema[.table] cannot be combined with --schema or with a directory target"
+        ),
+    )
     diff_p.add_argument(
         "target",
         type=Path,
         help=(
-            "Directory containing per-schema YAML/JSON files, or the name of a second "
-            "catalog to compare directly"
+            "Directory containing per-schema YAML/JSON files, or a second catalog to compare "
+            "directly (optionally dotted as catalog.schema[.table], matching the depth of "
+            "'catalog' — the two sides' schema/table names may differ)"
         ),
     )
     diff_p.add_argument(
