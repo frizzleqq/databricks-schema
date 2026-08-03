@@ -4,11 +4,13 @@ import json
 import logging
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+import yaml
 from databricks.sdk.service.catalog import TableType
 
-from databricks_schema.cli import _json_default, main
+from databricks_schema.cli import _json_default, _serialize_structured, main
 from databricks_schema.models import Column, PrimaryKey
 
 # Importing cli disables propagation on the "databricks_schema" logger for real CLI runs;
@@ -62,6 +64,36 @@ class TestJsonSchemaCommand:
             monkeypatch.setattr(sys, "argv", ["databricks-schema", "json-schema", "bogus"])
             main()
         assert exc_info.value.code == 2
+
+    def test_format_yaml_matches_json_shape(self, monkeypatch, capsys):
+        _run(monkeypatch, ["json-schema", "validate"])
+        json_data = json.loads(capsys.readouterr().out)
+
+        _run(monkeypatch, ["json-schema", "validate", "--format", "yaml"])
+        yaml_data = yaml.safe_load(capsys.readouterr().out)
+
+        assert yaml_data == json_data
+
+
+class TestSerializeStructured:
+    def test_yaml_and_json_carry_the_same_data(self):
+        data = {"changes": [{"field": "data_type", "old": "bigint", "new": "int"}]}
+
+        json_out = _serialize_structured(data, "json")
+        yaml_out = _serialize_structured(data, "yaml")
+
+        assert json.loads(json_out) == data
+        assert yaml.safe_load(yaml_out) == data
+
+    def test_yaml_resolves_pydantic_models_and_enums(self):
+        data = {"pk": PrimaryKey(columns=["id"]), "table_type": TableType.MANAGED}
+
+        yaml_out = _serialize_structured(data, "yaml")
+
+        assert yaml.safe_load(yaml_out) == {
+            "pk": {"name": None, "columns": ["id"]},
+            "table_type": "MANAGED",
+        }
 
 
 class TestDiffFilesJson:
@@ -136,6 +168,53 @@ class TestDiffFilesJson:
             mode="json"
         )
 
+    def test_format_yaml_matches_json_shape(self, tmp_path, monkeypatch, capsys):
+        dir1, dir2 = tmp_path / "old", tmp_path / "new"
+        _write_schema(
+            dir1,
+            "main",
+            "name: main\ntables:\n  - name: users\n    columns:\n"
+            "      - name: id\n        data_type: bigint\n",
+        )
+        _write_schema(
+            dir2,
+            "main",
+            "name: main\ntables:\n  - name: users\n    columns:\n"
+            "      - name: id\n        data_type: int\n",
+        )
+
+        exit_code = _run(
+            monkeypatch, ["diff-files", str(dir1), str(dir2), "--format", "json", "--quiet"]
+        )
+        json_data = json.loads(capsys.readouterr().out)
+        assert exit_code == 1
+
+        exit_code = _run(
+            monkeypatch, ["diff-files", str(dir1), str(dir2), "--format", "yaml", "--quiet"]
+        )
+        yaml_data = yaml.safe_load(capsys.readouterr().out)
+        assert exit_code == 1
+
+        assert yaml_data == json_data
+
+
+class TestListCatalogsFormats:
+    def _mock_client(self, monkeypatch, names):
+        client = MagicMock()
+        client.catalogs.list.return_value = [MagicMock(name=n) for n in names]
+        for mock_catalog, n in zip(client.catalogs.list.return_value, names, strict=True):
+            mock_catalog.name = n
+        monkeypatch.setattr("databricks_schema.cli._make_client", lambda host, token: client)
+
+    def test_json_and_yaml_both_list_sorted_names(self, monkeypatch, capsys):
+        self._mock_client(monkeypatch, ["raw", "main"])
+
+        _run(monkeypatch, ["list-catalogs", "--format", "json"])
+        assert json.loads(capsys.readouterr().out) == ["main", "raw"]
+
+        _run(monkeypatch, ["list-catalogs", "--format", "yaml"])
+        assert yaml.safe_load(capsys.readouterr().out) == ["main", "raw"]
+
 
 class TestValidateJson:
     def test_clean_schemas_exit_0(self, tmp_path, monkeypatch, capsys):
@@ -171,3 +250,22 @@ class TestValidateJson:
                 "message": "primary key references unknown column: 'missing'",
             }
         ]
+
+    def test_format_yaml_matches_json_shape(self, tmp_path, monkeypatch, capsys):
+        _write_schema(
+            tmp_path,
+            "main",
+            "name: main\ntables:\n  - name: users\n    primary_key:\n"
+            "      columns: [missing]\n    columns:\n"
+            "      - name: id\n        data_type: bigint\n",
+        )
+
+        exit_code = _run(monkeypatch, ["validate", str(tmp_path), "--format", "json"])
+        json_data = json.loads(capsys.readouterr().out)
+        assert exit_code == 1
+
+        exit_code = _run(monkeypatch, ["validate", str(tmp_path), "--format", "yaml"])
+        yaml_data = yaml.safe_load(capsys.readouterr().out)
+        assert exit_code == 1
+
+        assert yaml_data == json_data

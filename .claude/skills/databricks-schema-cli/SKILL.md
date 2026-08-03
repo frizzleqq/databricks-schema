@@ -41,8 +41,8 @@ databricks-schema list-schemas <catalog>      # what schemas are in this catalog
 ```
 
 Both print names, one per line — good for a quick scan or for building a `--schema` filter
-list for the commands below. Pass `--format json` / `-f json` to get a JSON array of names
-instead (e.g. `["main", "raw"]`).
+list for the commands below. Pass `--format json` / `-f json` (or `--format yaml`) to get the
+names as a JSON array (or YAML list) instead (e.g. `["main", "raw"]`).
 
 ## Pulling a schema into a readable snapshot
 
@@ -163,11 +163,12 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
 adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.
 
-Pass `--format json` / `-f json` (on both `diff` and `diff-files`) instead of the `+`/`-`/`~` tree
-to get the same comparison as structured JSON — a `{"schemas": [...]}` document with per-schema
-`status` (`added`/`removed`/`modified`/`unchanged`), `changes` (field-level `old`/`new` pairs), and
-nested `tables`/`columns`. Exit codes are unchanged. Run `databricks-schema json-schema diff` to
-get the exact JSON Schema for this shape before parsing it.
+Pass `--format json` / `-f json` (or `--format yaml`, on both `diff` and `diff-files`) instead of
+the `+`/`-`/`~` tree to get the same comparison as structured JSON/YAML — a `{"schemas": [...]}`
+document with per-schema `status` (`added`/`removed`/`modified`/`unchanged`), `changes`
+(field-level `old`/`new` pairs), and nested `tables`/`columns`. Exit codes are unchanged. Run
+`databricks-schema json-schema diff` to get the exact shape before parsing it (also available as
+`--format yaml`).
 
 ## Validating schema files
 
@@ -177,9 +178,9 @@ databricks-schema validate ./schemas/
 
 Checks structural integrity of local YAML/JSON files with no Databricks connection (e.g. after
 hand-editing one). Exits `0` and prints `OK — N schema(s) validated` on success, `1` with an
-`ERROR:` line per issue otherwise. Pass `--format json` for a `{"issues": [...]}` document instead
-(each issue has `schema`, `table`, `message`) — see `databricks-schema json-schema validate` for
-its JSON Schema.
+`ERROR:` line per issue otherwise. Pass `--format json` or `--format yaml` for an
+`{"issues": [...]}` document instead (each issue has `schema`, `table`, `message`) — see
+`databricks-schema json-schema validate` for its exact shape.
 
 ## Generating migration SQL
 
@@ -206,9 +207,10 @@ databricks-schema json-schema diff       # shape of diff / diff-files --format j
 databricks-schema json-schema validate   # shape of validate --format json
 ```
 
-Prints the JSON Schema for that model/output to stdout — no Databricks connection needed. If
-you're about to parse `--format json` output (or extract's YAML/JSON) programmatically and aren't
-already sure of its exact fields, run this first instead of guessing from an example.
+Prints the JSON Schema for that model/output to stdout — no Databricks connection needed. Add
+`--format yaml` to get the same schema rendered as YAML. If you're about to parse `--format json`
+(or `--format yaml`) output — or extract's YAML/JSON — programmatically and aren't already sure of
+its exact fields, run this first instead of guessing from an example.
 
 ## Choosing the right command
 
