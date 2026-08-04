@@ -65,6 +65,7 @@ building a `--schema` filter list for the commands below.
 databricks-schema extract <catalog> --schema main       # one schema, to stdout
 databricks-schema extract <catalog>                      # whole catalog, to stdout
 databricks-schema extract <catalog> --output-dir ./schemas/   # one file per schema
+databricks-schema extract <catalog>.<schema>              # single schema, dotted shortcut
 databricks-schema extract <catalog>.<schema>.<table>      # single table, dotted shortcut
 ```
 
