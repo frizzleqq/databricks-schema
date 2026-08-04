@@ -6,32 +6,48 @@ description: Explore, snapshot, diff, and generate migration SQL for Databricks 
 # Databricks Unity Catalog exploration (`databricks-schema`)
 
 `databricks-schema` is a CLI that talks to a Databricks workspace via the Databricks SDK and
-represents Unity Catalog schemas as YAML or JSON output. Use it instead of
-writing ad-hoc SDK calls whenever the task is "look at / snapshot / diff / generate SQL for" a
-Unity Catalog schema.
+represents Unity Catalog schemas as YAML or JSON. Use it instead of writing ad-hoc SDK calls
+whenever the task is "look at / snapshot / diff / generate SQL for" a Unity Catalog schema.
 
 Call it as `databricks-schema <command> ...`. If the command isn't found, install it first (e.g.
-`uv tool install databricks-schema`). Run `databricks-schema <command> --help`
-to confirm exact CLI usage.
+`uv tool install databricks-schema`). Run `databricks-schema <command> --help` to confirm exact
+usage — flags shown below can drift; the CLI's own `--help` is the source of truth.
 
 ## Authentication
 
 Don't pass `--host` / `--token` yourself. Just run the commands — the CLI resolves credentials
 on its own via the Databricks SDK, from `DATABRICKS_HOST`/`DATABRICKS_TOKEN` env vars, an active
-`databricks auth login` session, or a profile in `~/.databrickscfg`, whichever is already set up
-in the environment.
+`databricks auth login` session, or a profile in `~/.databrickscfg`, whichever is already set up.
 
-If a command fails with an `Unauthenticated`/`PermissionDenied` error, that means none of those
-are configured (or the credential lacks access) — tell the user auth is missing/insufficient
-rather than trying to fix it yourself. Don't confuse this with a `NotFound` error, which means
-the catalog/schema name itself is wrong.
+If a command fails with `Unauthenticated`/`PermissionDenied`, tell the user auth is
+missing/insufficient rather than trying to fix it yourself. Don't confuse this with `NotFound`,
+which means the catalog/schema/table name itself is wrong.
 
-## Reducing noise for agentic use
+## Flags shared across commands
 
-`extract`, `diff`, `generate-sql`, and `diff-files` print progress lines (e.g. `Extracting
-catalog 'X'...`, `Comparing catalog 'X' against ...`) to stderr while they run. Pass
-`--quiet` / `-q` to suppress them — the actual result (extracted YAML/JSON, diff tree, generated
-SQL, exit code) is unaffected. Errors are always printed regardless of `--quiet`.
+Read this once — command sections below only call out what's *different* for that command.
+
+| Flag | Where | Meaning |
+|---|---|---|
+| `--schema`/`-s NAME` (repeatable) | `extract`, `diff`, `generate-sql`, `diff-files`, `validate` | Filter to specific schema(s). Omit → all schemas. |
+| `catalog.schema[.table]` dotted arg | `extract`'s `catalog`; `diff`'s `catalog` and `target` (when `target` isn't a directory) | Shortcut for filtering to one schema or table instead of `--schema`. Exits **2** if combined with `--schema`. On `diff`, both sides must dot to the same depth (`cat.schema` vs `cat` is an error), but the schema/table **names need not match across sides** — this is how you diff a differently-named copy (e.g. a `_test` schema/table) against the "real" one, same or different catalog. Can't be used on `catalog` when `diff`'s `target` is a directory (use `--schema` there instead). |
+| `--include-metadata` | `extract`, `diff`, `generate-sql`, `diff-files` | Adds `owner` to output/comparison. `extract` additionally adds `storage_location` (not compared elsewhere). Default: off. |
+| `--include-tags` | `extract`, `diff`, `generate-sql` | Adds Unity Catalog tag lookups (extra API call per entity). Default: off. |
+| `--quiet`/`-q` | `extract`, `diff`, `generate-sql`, `diff-files` | Suppresses stderr progress lines (e.g. `Extracting catalog 'X'...`). Errors always print. Use for agentic/scripted runs — actual output and exit code are unaffected. |
+| `--output-dir`/`-o DIR` | `extract`, `generate-sql` | Write one file per schema instead of printing to stdout. |
+| `--workers N` (default 4) | `extract`, `diff`, `generate-sql` | Parallel table-extraction workers; raise for large catalogs. |
+
+### `--format`/`-f` — same flag name, different meaning per command
+
+| Command(s) | Choices | Default | Controls |
+|---|---|---|---|
+| `extract` | `yaml`, `json` | `yaml` | File format of the extracted schema **content** |
+| `diff`, `diff-files`, `validate`, `list-catalogs`, `list-schemas` | `text`, `json`, `yaml` | `text` | **Representation** of the result (`text` = human-readable) |
+| `json-schema` | `json`, `yaml` | `json` | Representation of the JSON Schema output itself |
+
+Before parsing `--format json`/`yaml` output (or extract's YAML/JSON) programmatically, run
+`databricks-schema json-schema <model>` to get its exact shape instead of guessing from an
+example.
 
 ## Orienting yourself in a workspace
 
@@ -40,44 +56,24 @@ databricks-schema list-catalogs              # what catalogs can I see?
 databricks-schema list-schemas <catalog>      # what schemas are in this catalog?
 ```
 
-Both print names, one per line — good for a quick scan or for building a `--schema` filter
-list for the commands below. Pass `--format json` / `-f json` (or `--format yaml`) to get the
-names as a JSON array (or YAML list) instead (e.g. `["main", "raw"]`).
+Prints names, one per line (or `--format json`/`yaml` for a list) — good for a quick scan or for
+building a `--schema` filter list for the commands below.
 
-## Pulling a schema into a readable snapshot
+## `extract` — pull a schema into a readable snapshot
 
 ```bash
-# Printed straight to stdout as one Catalog document (no --output-dir) — good for
-# "show me schema X" or "show me this whole catalog"
-databricks-schema extract <catalog> --schema main
-databricks-schema extract <catalog>
-
-# Whole catalog (or a filtered set of schemas) written to one file per schema
-databricks-schema extract <catalog> --output-dir ./schemas/
-databricks-schema extract <catalog> --schema main --schema raw --output-dir ./schemas/
-
-# A single schema or table can also be named directly, dotted onto the catalog —
-# output keeps the same Catalog/Schema shape, just filtered down. Cannot combine
-# with --schema.
-databricks-schema extract <catalog>.<schema>
-databricks-schema extract <catalog>.<schema>.<table>
+databricks-schema extract <catalog> --schema main       # one schema, to stdout
+databricks-schema extract <catalog>                      # whole catalog, to stdout
+databricks-schema extract <catalog> --output-dir ./schemas/   # one file per schema
+databricks-schema extract <catalog>.<schema>.<table>      # single table, dotted shortcut
 ```
 
-Notes:
-- `--schema` / `-s` is repeatable; omit it to extract every schema.
-- `<catalog>.<schema>` and `<catalog>.<schema>.<table>` are shortcuts for filtering to one schema
-  or one table; they exit with an error (code 2) if combined with `--schema`.
-- `--output-dir` writes one file per schema; omitting it prints one `Catalog` document to stdout
-  (`name` + `schemas: [...]`) covering all matching schemas.
-- `--format json` / `-f json` writes `.json` instead of `.yaml` (same structure either way).
-- `--include-metadata` adds `owner` and `storage_location` (excluded by default — smaller, more
-  diffable output).
-- `--include-tags` adds Unity Catalog tags (excluded by default — extra API calls per entity).
-- `--workers N` controls parallel table extraction (default 4); raise it for large catalogs.
+Omitting `--output-dir` prints one `Catalog` document to stdout (`name` + `schemas: [...]`)
+covering all matching schemas; with it, one file per schema is written, named `<schema>.yaml`
+(or `.json`).
 
-### Shape of the output
-
-Each schema file looks like this (fields with no value are omitted entirely):
+Shape of one schema (fields with no value are omitted entirely; foreign keys reference
+`ref_schema`+`ref_table` only — always the same catalog as the source table):
 
 ```yaml
 name: main
@@ -108,55 +104,25 @@ tables:
         ref_columns: [id]
 ```
 
-Read this directly to answer questions about a catalog's structure — column names/types,
-nullability, primary/foreign keys, per-object tags — without needing SDK calls of your own.
-Foreign keys reference `ref_schema` + `ref_table` only (same catalog as the source table).
+Stdout output (no `--output-dir`) wraps this under `schemas:`, with the catalog name at the top
+level, instead of writing it standalone.
 
-Stdout output (no `--output-dir`) wraps this in a `Catalog` document instead — same schema shape,
-nested under `schemas`, with the catalog name at the top level:
-
-```yaml
-name: prod_catalog
-schemas:
-  - name: main
-    comment: Main production schema
-    tags:
-      env: prod
-    tables: [...]
-```
-
-## Comparing catalog state
+## `diff` / `diff-files` — compare catalog state
 
 ```bash
-# Live catalog vs. a directory of stored schema files (format auto-detected: YAML or JSON)
-databricks-schema diff <catalog> ./schemas/
-
-# Live catalog vs. another live catalog (e.g. dev vs. prod) — no local files needed
-databricks-schema diff dev_catalog prod_catalog
-
-# Both sides dotted to a single schema or table — the names don't have to match, so this
-# also covers comparing e.g. a `_test` copy of a schema/table against the "real" one, in the
-# same catalog or a different one
-databricks-schema diff mycat.orders mycat.orders_test
-databricks-schema diff mycat.sales.orders othercat.sales.orders_v2
-
-# Two local directories, no Databricks connection needed
-databricks-schema diff-files ./schemas-old/ ./schemas-new/
+databricks-schema diff <catalog> ./schemas/                    # live vs. stored directory
+databricks-schema diff dev_catalog prod_catalog                 # live vs. live, e.g. dev vs. prod
+databricks-schema diff mycat.orders mycat.orders_test           # one schema vs. a differently-named one
+databricks-schema diff mycat.sales.orders othercat.sales.orders_v2   # one table vs. another, cross-catalog
+databricks-schema diff-files ./schemas-old/ ./schemas-new/      # two local dirs, no Databricks connection
 ```
 
-For `diff`, the second argument is a directory path if one exists on disk, otherwise it's read as
-a second catalog name (optionally dotted) and both catalogs are extracted live. Either way, the
-first `catalog` argument is the "live"/actual side and the second (`target`) is the
-baseline/reference side — that ordering decides which side of each diff shows as `+`/`-`.
+For `diff`, `target` is a directory if one exists on disk at that path, otherwise it's read as a
+second catalog name (see the dotted-arg row above for schema/table-scoped comparisons). Either
+way, `catalog` is the "live"/actual side and `target` is the baseline/reference side — that
+ordering decides which side of each diff shows as `+`/`-`.
 
-`catalog` and `target` can each be dotted as `catalog.schema` or `catalog.schema.table` when
-comparing two catalogs (not against a directory). Both sides must use the same depth — e.g.
-`mycat.orders` against `othercat` is an error — but the schema/table *names* don't need to match
-across sides, which is the way to diff two differently-named schemas or tables directly. Dotted
-syntax can't be combined with `--schema`, and can't be used on `catalog` when `target` is a
-directory (use `--schema` there instead).
-
-Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
+Text output is a tree with `+` (added), `-` (removed), `~` (modified) markers:
 
 ```
 ~ Schema: main [MODIFIED]
@@ -168,51 +134,45 @@ Both print a tree with `+` (added), `-` (removed), `~` (modified) markers, e.g.:
 - Schema: legacy [REMOVED]
 ```
 
-**Exit codes matter — use them instead of parsing stdout when you just need a yes/no:**
-- `0` — no differences
-- `1` — differences found (this is normal, not a failure)
-- `2` — usage error (bad directory, mixed YAML+JSON in one directory, no schema files found,
-  mismatched dotted-argument depth, or dotted syntax combined with `--schema`/a directory target)
+`--format json`/`yaml` gives the same comparison as a `{"schemas": [...]}` document instead —
+per-schema `status` (`added`/`removed`/`modified`/`unchanged`), `changes` (field-level `old`/`new`
+pairs), and nested `tables`/`columns`. Run `databricks-schema json-schema diff` for the exact
+shape.
 
-Same `--schema` and `--include-tags` flags apply as for `extract`. `--include-metadata` here only
-adds `owner` to the comparison — `extract`'s `storage_location` isn't diffed.
+**Exit codes matter — use them instead of parsing stdout for a yes/no:**
 
-Pass `--format json` / `-f json` (or `--format yaml`, on both `diff` and `diff-files`) instead of
-the `+`/`-`/`~` tree to get the same comparison as structured JSON/YAML — a `{"schemas": [...]}`
-document with per-schema `status` (`added`/`removed`/`modified`/`unchanged`), `changes`
-(field-level `old`/`new` pairs), and nested `tables`/`columns`. Exit codes are unchanged. Run
-`databricks-schema json-schema diff` to get the exact shape before parsing it (also available as
-`--format yaml`).
+| Code | `diff` / `diff-files` |
+|---|---|
+| 0 | no differences |
+| 1 | differences found (normal, not a failure) |
+| 2 | usage error — bad directory, mixed YAML+JSON, no schema files found, mismatched dotted-arg depth, or dotted syntax combined with `--schema`/a directory target |
 
-## Validating schema files
+## `validate` — sanity-check local files
 
 ```bash
 databricks-schema validate ./schemas/
 ```
 
-Checks structural integrity of local YAML/JSON files with no Databricks connection (e.g. after
-hand-editing one). Exits `0` and prints `OK — N schema(s) validated` on success, `1` with an
-`ERROR:` line per issue otherwise. Pass `--format json` or `--format yaml` for an
-`{"issues": [...]}` document instead (each issue has `schema`, `table`, `message`) — see
-`databricks-schema json-schema validate` for its exact shape.
+Structural integrity check on local YAML/JSON, no Databricks connection (e.g. after hand-editing
+one). Exit `0` + `OK — N schema(s) validated` on success, `1` + one `ERROR:` line per issue
+otherwise. `--format json`/`yaml` gives `{"issues": [...]}` (`schema`, `table`, `message` per
+issue) — see `databricks-schema json-schema validate` for the exact shape.
 
-## Generating migration SQL
+## `generate-sql` — produce migration DDL
 
 ```bash
-databricks-schema generate-sql <catalog> ./schemas/                       # print to stdout
+databricks-schema generate-sql <catalog> ./schemas/                            # to stdout
 databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/  # one .sql per schema
 ```
 
-Produces Databricks Spark SQL DDL to bring the *live* catalog in line with the *stored* files
+Databricks Spark SQL DDL to bring the *live* catalog in line with the *stored* files
 (create/alter tables and columns, add/drop keys, etc.). Destructive statements (`DROP SCHEMA`,
-`DROP TABLE`, `DROP COLUMN`) are emitted as commented-out SQL by default — pass `--allow-drop` to
-make them executable. Treat this as a review-then-run step, not something to pipe straight into
-execution, especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) show up as
+`DROP TABLE`, `DROP COLUMN`) are commented out by default — pass `--allow-drop` to make them
+executable. Treat this as review-then-run, not something to pipe straight into execution,
+especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) become
 `-- TODO: unsupported change: ...` comments rather than being silently dropped.
 
-Same `--schema`, `--include-tags`, `--include-metadata` filters apply as for `diff`.
-
-## Introspecting output shapes before parsing them
+## `json-schema` — introspect output shapes before parsing them
 
 ```bash
 databricks-schema json-schema catalog    # shape of extract's stdout Catalog document
@@ -221,20 +181,19 @@ databricks-schema json-schema diff       # shape of diff / diff-files --format j
 databricks-schema json-schema validate   # shape of validate --format json
 ```
 
-Prints the JSON Schema for that model/output to stdout — no Databricks connection needed. Add
-`--format yaml` to get the same schema rendered as YAML. If you're about to parse `--format json`
-(or `--format yaml`) output — or extract's YAML/JSON — programmatically and aren't already sure of
-its exact fields, run this first instead of guessing from an example.
+No Databricks connection needed. Run this before parsing any `--format json`/`yaml` output (or
+extract's YAML/JSON) programmatically, instead of guessing from an example.
 
 ## Choosing the right command
 
-| Want to...                                              | Command        |
-|-----------------------------------------------------------|----------------|
-| See what catalogs/schemas exist                           | `list-catalogs`, `list-schemas` |
-| Read/summarize a live schema's structure                  | `extract` (no `--output-dir`, use `--schema`) |
-| Snapshot a catalog for version control                    | `extract --output-dir` |
-| Check if a catalog drifted from a checked-in snapshot      | `diff` |
-| Check if two snapshot directories differ (no live access) | `diff-files` |
-| Sanity-check hand-edited YAML/JSON before using it         | `validate` |
-| Produce SQL to reconcile live catalog with a snapshot      | `generate-sql` |
-| Get the exact shape of any of the above before parsing it | `json-schema` |
+| Want to...                                                 | Command        |
+|--------------------------------------------------------------|----------------|
+| See what catalogs/schemas exist                              | `list-catalogs`, `list-schemas` |
+| Read/summarize a live schema's structure                     | `extract` (no `--output-dir`, use `--schema`) |
+| Snapshot a catalog for version control                       | `extract --output-dir` |
+| Check if a catalog drifted from a checked-in snapshot         | `diff` |
+| Compare two schemas/tables directly (incl. differently-named) | `diff` with dotted `catalog.schema[.table]` args |
+| Check if two snapshot directories differ (no live access)    | `diff-files` |
+| Sanity-check hand-edited YAML/JSON before using it            | `validate` |
+| Produce SQL to reconcile live catalog with a snapshot         | `generate-sql` |
+| Get the exact shape of any of the above before parsing it     | `json-schema` |
