@@ -38,6 +38,7 @@ skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to dri
 ## Conventions
 
 - Package manager: `uv`; do not use `pip` directly
+- Version bumps: use `uv version --bump <major|minor|patch>` (updates `pyproject.toml` and `uv.lock` together) — do not hand-edit the version string
 - Ruff: select E, W, F, I, UP; line-length 100; target py311
 - Use `X | None` not `Optional[X]`; use `datetime.UTC` not `timezone.utc`
 - `from __future__ import annotations` in every module
