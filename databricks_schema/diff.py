@@ -25,7 +25,7 @@ class ColumnDiff:
 @dataclass
 class TableDiff:
     name: str
-    status: str  # "added" | "removed" | "modified"
+    status: str  # "added" | "removed" | "modified" | "unchanged"
     changes: list[FieldChange] = field(default_factory=list)
     columns: list[ColumnDiff] = field(default_factory=list)
 
@@ -126,6 +126,21 @@ def diff_schemas(live: Schema, stored: Schema, include_metadata: bool = False) -
     table_diffs = _diff_tables(live.tables, stored.tables, include_metadata)
     status = "modified" if (changes or table_diffs) else "unchanged"
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)
+
+
+def diff_table_pair(live: Table, stored: Table, include_metadata: bool = False) -> TableDiff:
+    """Compare two Tables directly, regardless of whether their names match.
+
+    Used for `catalog.schema.table` vs `catalog.schema.table` CLI diffs, where the two
+    tables being compared may live under different names/schemas/catalogs.
+    """
+    table_fields = ["table_type", "comment", "primary_key", "foreign_keys", "tags"]
+    if include_metadata:
+        table_fields.insert(2, "owner")
+    changes = _compare_fields(stored, live, table_fields)
+    columns = _diff_columns(live.columns, stored.columns)
+    status = "modified" if (changes or columns) else "unchanged"
+    return TableDiff(name=live.name, status=status, changes=changes, columns=columns)
 
 
 def diff_schema_dirs(

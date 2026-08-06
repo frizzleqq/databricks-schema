@@ -7,6 +7,7 @@ from databricks_schema.diff import (
     diff_catalogs,
     diff_schema_dirs,
     diff_schemas,
+    diff_table_pair,
 )
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 from databricks_schema.yaml_io import schema_to_json, schema_to_yaml
@@ -150,6 +151,61 @@ class TestDiffSchemas:
         live = _schema(tables=[Table(name="t", foreign_keys=[fk])])
         result = diff_schemas(live=live, stored=stored)
         assert any(fc.field == "foreign_keys" for fc in result.tables[0].changes)
+
+
+class TestDiffTablePair:
+    def test_no_changes(self):
+        table = _table("users", columns=[_col("id")])
+        result = diff_table_pair(live=table, stored=table)
+        assert result.status == "unchanged"
+        assert result.changes == []
+        assert result.columns == []
+
+    def test_different_names_no_structural_change(self):
+        # names differ but everything else matches — should be treated as unchanged
+        live = _table("orders", comment="c", columns=[_col("id")])
+        stored = _table("orders_test", comment="c", columns=[_col("id")])
+        result = diff_table_pair(live=live, stored=stored)
+        assert result.status == "unchanged"
+        assert result.name == "orders"
+
+    def test_comment_changed(self):
+        live = _table("orders", comment="new")
+        stored = _table("orders_test", comment="old")
+        result = diff_table_pair(live=live, stored=stored)
+        assert result.status == "modified"
+        assert result.changes[0].field == "comment"
+        assert result.changes[0].old == "old"
+        assert result.changes[0].new == "new"
+
+    def test_owner_changed(self):
+        live = _table("t", owner="bob")
+        stored = _table("t", owner="alice")
+        result = diff_table_pair(live=live, stored=stored, include_metadata=True)
+        assert result.status == "modified"
+        assert result.changes[0].field == "owner"
+
+    def test_owner_ignored_without_metadata(self):
+        live = _table("t", owner="bob")
+        stored = _table("t", owner="alice")
+        result = diff_table_pair(live=live, stored=stored)
+        assert result.status == "unchanged"
+
+    def test_column_added(self):
+        live = _table("t", columns=[_col("id"), _col("email")])
+        stored = _table("t", columns=[_col("id")])
+        result = diff_table_pair(live=live, stored=stored)
+        assert result.status == "modified"
+        col_diff = next(c for c in result.columns if c.name == "email")
+        assert col_diff.status == "added"
+
+    def test_column_type_changed(self):
+        live = _table("t", columns=[_col("x", data_type="BIGINT")])
+        stored = _table("t", columns=[_col("x", data_type="STRING")])
+        result = diff_table_pair(live=live, stored=stored)
+        col_diff = result.columns[0]
+        assert col_diff.status == "modified"
+        assert col_diff.changes[0].field == "data_type"
 
 
 class TestDiffCatalogWithDir:

@@ -11,7 +11,7 @@ import yaml
 from databricks.sdk.service.catalog import TableType
 
 from databricks_schema.cli import _json_default, _serialize_structured, main
-from databricks_schema.models import Column, PrimaryKey
+from databricks_schema.models import Catalog, Column, PrimaryKey, Schema, Table
 
 # Importing cli disables propagation on the "databricks_schema" logger for real CLI runs;
 # undo that here so other test modules' caplog-based assertions still see log records.
@@ -196,6 +196,151 @@ class TestDiffFilesJson:
         assert exit_code == 1
 
         assert yaml_data == json_data
+
+
+class _FakeExtractor:
+    """Stand-in for CatalogExtractor that filters an in-memory dict of Catalogs."""
+
+    def __init__(self, catalogs: dict[str, Catalog]):
+        self._catalogs = catalogs
+
+    def extract_catalog(
+        self,
+        catalog_name,
+        schema_filter=None,
+        include_metadata=False,
+        include_tags=False,
+        table_filter=None,
+    ) -> Catalog:
+        catalog = self._catalogs[catalog_name]
+        schemas = []
+        for s in catalog.schemas:
+            if schema_filter and s.name not in schema_filter:
+                continue
+            tables = s.tables
+            if table_filter:
+                tables = [t for t in tables if t.name in table_filter]
+            schemas.append(
+                Schema(name=s.name, comment=s.comment, owner=s.owner, tables=tables, tags=s.tags)
+            )
+        return Catalog(
+            name=catalog.name, comment=catalog.comment, schemas=schemas, tags=catalog.tags
+        )
+
+
+def _mock_extractor(monkeypatch, catalogs: dict[str, Catalog]) -> None:
+    fake = _FakeExtractor(catalogs)
+    monkeypatch.setattr(
+        "databricks_schema.cli.CatalogExtractor", lambda client=None, max_workers=4: fake
+    )
+    monkeypatch.setattr("databricks_schema.cli._make_client", lambda host, token: None)
+
+
+class TestDiffDottedArgs:
+    def test_schema_level_diff_across_differently_named_schemas(self, monkeypatch, capsys):
+        mycat = Catalog(
+            name="mycat",
+            schemas=[
+                Schema(name="orders", comment="new", tables=[]),
+                Schema(name="orders_test", comment="old", tables=[]),
+            ],
+        )
+        _mock_extractor(monkeypatch, {"mycat": mycat})
+
+        exit_code = _run(
+            monkeypatch, ["diff", "mycat.orders", "mycat.orders_test", "--format", "json", "-q"]
+        )
+
+        assert exit_code == 1
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["schemas"]) == 1
+        assert data["schemas"][0]["name"] == "orders"
+        assert data["schemas"][0]["status"] == "modified"
+        assert data["schemas"][0]["changes"] == [{"field": "comment", "old": "old", "new": "new"}]
+
+    def test_table_level_diff_across_catalogs_and_names(self, monkeypatch, capsys):
+        cat1 = Catalog(
+            name="mycat",
+            schemas=[
+                Schema(
+                    name="sales",
+                    tables=[
+                        Table(
+                            name="orders",
+                            comment="new",
+                            columns=[Column(name="id", data_type="bigint")],
+                        )
+                    ],
+                )
+            ],
+        )
+        cat2 = Catalog(
+            name="othercat",
+            schemas=[
+                Schema(
+                    name="sales",
+                    tables=[
+                        Table(
+                            name="orders_v2",
+                            comment="old",
+                            columns=[Column(name="id", data_type="bigint")],
+                        )
+                    ],
+                )
+            ],
+        )
+        _mock_extractor(monkeypatch, {"mycat": cat1, "othercat": cat2})
+
+        exit_code = _run(
+            monkeypatch,
+            [
+                "diff",
+                "mycat.sales.orders",
+                "othercat.sales.orders_v2",
+                "--format",
+                "json",
+                "-q",
+            ],
+        )
+
+        assert exit_code == 1
+        data = json.loads(capsys.readouterr().out)
+        assert data["schemas"][0]["status"] == "modified"
+        table_diff = data["schemas"][0]["tables"][0]
+        assert table_diff["name"] == "orders"
+        assert table_diff["changes"] == [{"field": "comment", "old": "old", "new": "new"}]
+
+    def test_table_level_no_changes_reports_unchanged(self, monkeypatch, capsys):
+        table = Table(name="orders", columns=[Column(name="id", data_type="bigint")])
+        cat = Catalog(name="mycat", schemas=[Schema(name="sales", tables=[table])])
+        _mock_extractor(monkeypatch, {"mycat": cat})
+
+        exit_code = _run(
+            monkeypatch,
+            ["diff", "mycat.sales.orders", "mycat.sales.orders", "--format", "json", "-q"],
+        )
+
+        assert exit_code == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["schemas"][0]["status"] == "unchanged"
+        assert data["schemas"][0]["tables"] == []
+
+    def test_depth_mismatch_exits_2(self, monkeypatch, capsys):
+        exit_code = _run(monkeypatch, ["diff", "mycat.orders", "mycat", "-q"])
+        assert exit_code == 2
+        assert "same depth" in capsys.readouterr().err
+
+    def test_schema_flag_conflicts_with_dotted_schema(self, monkeypatch, capsys):
+        exit_code = _run(
+            monkeypatch, ["diff", "mycat.orders", "mycat.orders_test", "-s", "orders", "-q"]
+        )
+        assert exit_code == 2
+        assert "--schema" in capsys.readouterr().err
+
+    def test_directory_target_rejects_dotted_catalog(self, monkeypatch, capsys, tmp_path):
+        exit_code = _run(monkeypatch, ["diff", "mycat.orders", str(tmp_path), "-q"])
+        assert exit_code == 2
+        assert "directory target" in capsys.readouterr().err
 
 
 class TestListCatalogsFormats:
