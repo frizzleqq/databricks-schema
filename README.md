@@ -65,7 +65,7 @@ uv run ruff format databricks_schema/ tests/
 ## Agent Skill
 
 This repo ships an [Agent Skill](https://code.claude.com/docs/en/skills) at
-[`.claude/skills/databricks-schema-cli/SKILL.md`](.claude/skills/databricks-schema-cli/SKILL.md)
+[`skills/databricks-schema-cli/SKILL.md`](skills/databricks-schema-cli/SKILL.md)
 that teaches an AI coding agent (e.g. Claude Code) how to use the `databricks-schema` CLI to
 explore, snapshot, diff, and generate migration SQL for a live Unity Catalog. Copy the skill into
 your own project and it can use the CLI directly instead of writing ad-hoc Databricks SDK calls
@@ -78,12 +78,21 @@ with [uv](https://github.com/astral-sh/uv):
 uv tool install databricks-schema
 ```
 
-To use the skill in your own project without cloning this repo, download it directly:
+To use the skill in your own project without cloning this repo, download it directly into your
+project's `.claude/skills/`:
 
 ```bash
 mkdir -p .claude/skills/databricks-schema-cli
 curl -o .claude/skills/databricks-schema-cli/SKILL.md \
-  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/.claude/skills/databricks-schema-cli/SKILL.md
+  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/skills/databricks-schema-cli/SKILL.md
+```
+
+For agentic harnesses other than Claude Code that look under `.agents/skills/` instead:
+
+```bash
+mkdir -p .agents/skills/databricks-schema-cli
+curl -o .agents/skills/databricks-schema-cli/SKILL.md \
+  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/skills/databricks-schema-cli/SKILL.md
 ```
 
 ## Output Format

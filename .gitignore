@@ -14,4 +14,3 @@ wheels/
 
 # Claude Code
 .claude/*
-!.claude/skills/
