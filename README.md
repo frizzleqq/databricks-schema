@@ -87,6 +87,14 @@ curl -o .claude/skills/databricks-schema-cli/SKILL.md \
   https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/skills/databricks-schema-cli/SKILL.md
 ```
 
+For agentic harnesses other than Claude Code that look under `.agents/skills/` instead:
+
+```bash
+mkdir -p .agents/skills/databricks-schema-cli
+curl -o .agents/skills/databricks-schema-cli/SKILL.md \
+  https://raw.githubusercontent.com/frizzleqq/databricks-schema/main/skills/databricks-schema-cli/SKILL.md
+```
+
 ## Output Format
 
 Each schema is written to `{output-dir}/{schema-name}.yaml` if `--output-dir` is specified. Fields with no value (null comments, empty tag dicts, empty FK lists) are omitted. Use `--format json` to write `.json` files with the same structure.
