@@ -15,7 +15,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import DatabricksError, NotFound, PermissionDenied, Unauthenticated
 from pydantic import BaseModel, TypeAdapter
 
-from databricks_schema.dbml_io import DbmlParseError, catalog_to_dbml
+from databricks_schema.dbml_io import DbmlDependencyError, DbmlParseError, catalog_to_dbml
 from databricks_schema.diff import (
     CatalogDiff,
     SchemaDiff,
@@ -846,7 +846,7 @@ def main() -> None:
         print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
         print("Check that the catalog and schema names are correct.", file=sys.stderr)
         sys.exit(2)
-    except DbmlParseError as e:
+    except (DbmlParseError, DbmlDependencyError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
     except (Unauthenticated, PermissionDenied, DatabricksError) as e:

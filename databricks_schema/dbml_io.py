@@ -19,6 +19,9 @@ appended to the relevant note as trailing ``@key: value`` lines (tags as a JSON 
     @table_type: MANAGED
     @tags: {"pii": "false"}'''
 
+Writing has no extra dependencies. Reading needs PyDBML (``pip install
+'databricks-schema[dbml]'``); without it the readers raise DbmlDependencyError.
+
 Parsing uses PyDBML's grammar but resolves tables, columns and references itself, so references
 to tables outside the file (e.g. a foreign key into a schema that was not extracted) are kept
 rather than rejected. Hand-written DBML is accepted too: unqualified tables land in schema
@@ -35,24 +38,31 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import pyparsing as pp
-from pydbml.definitions.common import comment as dbml_comment
-from pydbml.definitions.enum import enum as dbml_enum
-from pydbml.definitions.project import project as dbml_project
-from pydbml.definitions.reference import ref as dbml_ref
-from pydbml.definitions.sticky_note import sticky_note as dbml_sticky_note
-from pydbml.definitions.table import table as dbml_table
-from pydbml.definitions.table_group import table_group as dbml_table_group
-from pydbml.parser.blueprints import (
-    ExpressionBlueprint,
-    NoteBlueprint,
-    ProjectBlueprint,
-    ReferenceBlueprint,
-    TableBlueprint,
-    TableGroupBlueprint,
-)
-
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
+
+# PyDBML is only needed for reading DBML and ships as the optional `dbml` extra; writing works
+# without it.
+try:
+    import pyparsing as pp
+    from pydbml.definitions.common import comment as dbml_comment
+    from pydbml.definitions.enum import enum as dbml_enum
+    from pydbml.definitions.project import project as dbml_project
+    from pydbml.definitions.reference import ref as dbml_ref
+    from pydbml.definitions.sticky_note import sticky_note as dbml_sticky_note
+    from pydbml.definitions.table import table as dbml_table
+    from pydbml.definitions.table_group import table_group as dbml_table_group
+    from pydbml.parser.blueprints import (
+        ExpressionBlueprint,
+        NoteBlueprint,
+        ProjectBlueprint,
+        ReferenceBlueprint,
+        TableBlueprint,
+        TableGroupBlueprint,
+    )
+except ImportError:  # pragma: no cover - exercised by monkeypatching PYDBML_AVAILABLE
+    PYDBML_AVAILABLE = False
+else:
+    PYDBML_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +74,16 @@ _DEFAULT_SCHEMA = "public"
 
 class DbmlParseError(ValueError):
     """Raised when DBML text cannot be parsed into the schema models."""
+
+
+class DbmlDependencyError(ImportError):
+    """Raised when reading DBML without the optional PyDBML dependency installed."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Reading DBML requires the optional 'dbml' extra: "
+            "pip install 'databricks-schema[dbml]' (or uv tool install 'databricks-schema[dbml]')"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -198,11 +218,9 @@ def catalog_to_dbml(catalog: Catalog) -> str:
 # Reading
 # ---------------------------------------------------------------------------
 
-_SYNTAX = (
-    (dbml_table | dbml_ref | dbml_enum | dbml_table_group | dbml_project | dbml_sticky_note)[...]
-    + ("\n" | dbml_comment)[...]
-    + pp.StringEnd()
-)
+if PYDBML_AVAILABLE:
+    _BLOCK = dbml_table | dbml_ref | dbml_enum | dbml_table_group | dbml_project | dbml_sticky_note
+    _SYNTAX = _BLOCK[...] + ("\n" | dbml_comment)[...] + pp.StringEnd()
 
 
 @dataclass
@@ -258,6 +276,8 @@ class _Parsed:
 
 
 def _parse(text: str) -> _Parsed:
+    if not PYDBML_AVAILABLE:
+        raise DbmlDependencyError()
     try:
         tokens = _SYNTAX.parse_string(text.lstrip("﻿"), parse_all=True)
     except pp.ParseBaseException as e:

@@ -135,6 +135,15 @@ tables:
 
 ### DBML
 
+Writing DBML works out of the box; reading it back (`diff`, `generate-sql`, `validate`, `diff-files`, `catalog_from_dbml`) needs the optional `dbml` extra, which installs [PyDBML](https://github.com/Vanderhoof/PyDBML):
+
+```bash
+pip install 'databricks-schema[dbml]'
+uv tool install 'databricks-schema[dbml]'
+```
+
+Without it, those commands exit `2` with a message saying how to install it.
+
 Use `--format dbml` to write the catalog as a single [DBML](https://dbml.dbdiagram.io/docs/) document — `{output-dir}/{catalog}.dbml` with `--output-dir`, or stdout without. Unlike YAML/JSON, DBML is one file per catalog, so that foreign keys between schemas resolve within the file. Paste it into [dbdiagram.io](https://dbdiagram.io) for an ER diagram, or point `diff`, `generate-sql`, `validate` and `diff-files` at the directory just like a YAML/JSON one.
 
 ```dbml

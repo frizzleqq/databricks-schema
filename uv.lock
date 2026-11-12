@@ -238,12 +238,17 @@ source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },
     { name = "pydantic" },
-    { name = "pydbml" },
     { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+dbml = [
+    { name = "pydbml" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "pydbml" },
     { name = "pytest" },
     { name = "pytest-mock" },
     { name = "ruff" },
@@ -253,12 +258,14 @@ dev = [
 requires-dist = [
     { name = "databricks-sdk", specifier = ">=0.64.0" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pydbml", specifier = ">=1.2.1,<2" },
+    { name = "pydbml", marker = "extra == 'dbml'", specifier = ">=1.2.1,<2" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
+provides-extras = ["dbml"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pydbml", specifier = ">=1.2.1,<2" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-mock", specifier = ">=3.14" },
     { name = "ruff", specifier = ">=0.9" },

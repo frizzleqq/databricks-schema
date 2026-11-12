@@ -4,6 +4,7 @@ import pytest
 from databricks.sdk.service.catalog import TableType
 
 from databricks_schema.dbml_io import (
+    DbmlDependencyError,
     DbmlParseError,
     catalog_from_dbml,
     catalog_to_dbml,
@@ -274,3 +275,14 @@ class TestLoadSchemaDir:
         (tmp_path / "b.dbml").write_text(text, encoding="utf-8")
         with pytest.raises(DbmlParseError, match="defined in both"):
             load_schema_dir(tmp_path, "dbml")
+
+
+class TestWithoutPydbml:
+    def test_writing_needs_no_pydbml(self, monkeypatch):
+        monkeypatch.setattr("databricks_schema.dbml_io.PYDBML_AVAILABLE", False)
+        assert catalog_to_dbml(_full_catalog()).startswith('Project "main"')
+
+    def test_reading_raises_helpful_error(self, monkeypatch):
+        monkeypatch.setattr("databricks_schema.dbml_io.PYDBML_AVAILABLE", False)
+        with pytest.raises(DbmlDependencyError, match=r"databricks-schema\[dbml\]"):
+            schemas_from_dbml("Table t {\n a int\n}\n")

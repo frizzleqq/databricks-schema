@@ -498,3 +498,9 @@ class TestDbmlFormat:
         (tmp_path / "bad.dbml").write_text("Table t {\n a int [nope]\n}\n", encoding="utf-8")
         assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
         assert "Invalid DBML" in capsys.readouterr().err
+
+    def test_reading_dbml_without_extra_exits_2(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr("databricks_schema.dbml_io.PYDBML_AVAILABLE", False)
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
+        assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
+        assert "databricks-schema[dbml]" in capsys.readouterr().err

@@ -1,6 +1,7 @@
 from databricks.sdk.service.catalog import TableType
 
 from databricks_schema.dbml_io import (
+    DbmlDependencyError,
     DbmlParseError,
     catalog_from_dbml,
     catalog_to_dbml,
@@ -41,6 +42,7 @@ __all__ = [
     "CatalogExtractor",
     "Column",
     "ColumnDiff",
+    "DbmlDependencyError",
     "DbmlParseError",
     "FieldChange",
     "ForeignKey",

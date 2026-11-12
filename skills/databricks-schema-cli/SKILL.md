@@ -77,7 +77,9 @@ user wants an ER diagram (paste into dbdiagram.io); it round-trips losslessly, s
 directory works with `diff`/`generate-sql`/`validate`/`diff-files` too. Tags, owner,
 `table_type` and `storage_location` live as trailing `@key: value` lines inside notes (`@tags`
 is a JSON object) — keep that convention when hand-editing. For DBML directories, `--schema`
-matches schema names, not file names.
+matches schema names, not file names. Writing DBML always works, but *reading* it needs the
+optional extra — if a command fails with "requires the optional 'dbml' extra", reinstall with
+`uv tool install 'databricks-schema[dbml]'`.
 
 Shape of one schema (fields with no value are omitted entirely; foreign keys reference
 `ref_schema`+`ref_table` only — always the same catalog as the source table):

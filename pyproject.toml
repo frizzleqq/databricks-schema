@@ -27,9 +27,12 @@ dependencies = [
     # >=0.64.0 as we use 'entity_tag_assignments'
     "databricks-sdk>=0.64.0",
     "pydantic>=2.0",
-    "pydbml>=1.2.1,<2",
     "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+# Reading DBML files (writing DBML needs no extra dependencies)
+dbml = ["pydbml>=1.2.1,<2"]
 
 [project.urls]
 Homepage = "https://github.com/frizzleqq/databricks-schema"
@@ -41,7 +44,7 @@ Changelog = "https://github.com/frizzleqq/databricks-schema/releases"
 databricks-schema = "databricks_schema.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-mock>=3.14", "ruff>=0.9"]
+dev = ["pydbml>=1.2.1,<2", "pytest>=8.0", "pytest-mock>=3.14", "ruff>=0.9"]
 
 [tool.ruff]
 target-version = "py313"
