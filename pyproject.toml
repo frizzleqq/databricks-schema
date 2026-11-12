@@ -27,6 +27,7 @@ dependencies = [
     # >=0.64.0 as we use 'entity_tag_assignments'
     "databricks-sdk>=0.64.0",
     "pydantic>=2.0",
+    "pydbml>=1.2.1,<2",
     "pyyaml>=6.0",
 ]
 
@@ -51,3 +52,5 @@ select = ["E", "W", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pydbml still calls pyparsing's camelCase APIs at import time; not actionable here.
+filterwarnings = ["ignore::DeprecationWarning:pydbml.*"]

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 import yaml
 
+from databricks_schema.dbml_io import DbmlParseError, schemas_from_dbml
 from databricks_schema.models import Catalog, Schema
+
+SchemaFormat = Literal["yaml", "json", "dbml"]
+FORMAT_EXTENSIONS: dict[str, str] = {"yaml": ".yaml", "json": ".json", "dbml": ".dbml"}
 
 
 def _strip_empty(obj: Any) -> Any:
@@ -73,3 +78,39 @@ def catalog_to_json(catalog: Catalog) -> str:
 
 def catalog_from_json(text: str) -> Catalog:
     return Catalog.model_validate(json.loads(text))
+
+
+def load_schema_dir(
+    path: Path,
+    fmt: SchemaFormat = "yaml",
+    schema_names: frozenset[str] | None = None,
+) -> dict[str, Schema]:
+    """Load every schema stored in a directory, keyed by schema name.
+
+    YAML/JSON directories hold one file per schema; ``schema_names`` filters on the file stem.
+    DBML directories hold one or more DBML documents (typically one per catalog), each of which
+    may define several schemas; ``schema_names`` filters on the schema name. A schema defined
+    in more than one DBML file raises DbmlParseError.
+    """
+    files = sorted(path.glob(f"*{FORMAT_EXTENSIONS[fmt]}"))
+    schemas: dict[str, Schema] = {}
+    if fmt == "dbml":
+        origin: dict[str, Path] = {}
+        for f in files:
+            for schema in schemas_from_dbml(f.read_text(encoding="utf-8")):
+                if schema_names is not None and schema.name not in schema_names:
+                    continue
+                if schema.name in schemas:
+                    raise DbmlParseError(
+                        f"Schema '{schema.name}' is defined in both {origin[schema.name]} and {f}"
+                    )
+                schemas[schema.name] = schema
+                origin[schema.name] = f
+        return schemas
+    loader = schema_from_json if fmt == "json" else schema_from_yaml
+    for f in files:
+        if schema_names is not None and f.stem not in schema_names:
+            continue
+        schema = loader(f.read_text(encoding="utf-8"))
+        schemas[schema.name] = schema
+    return schemas

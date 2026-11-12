@@ -1,6 +1,6 @@
 # databricks-schema
 
-A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas in YAML format. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
+A CLI tool and Python library that uses the Databricks SDK to extract and diff Unity Catalog schemas as YAML, JSON or [DBML](https://dbml.dbdiagram.io/docs/) files. It can also generate Databricks Spark SQL to apply schema changes across catalogs.
 
 ## Getting Started
 
@@ -133,6 +133,55 @@ tables:
           - id
 ```
 
+### DBML
+
+Use `--format dbml` to write the catalog as a single [DBML](https://dbml.dbdiagram.io/docs/) document — `{output-dir}/{catalog}.dbml` with `--output-dir`, or stdout without. Unlike YAML/JSON, DBML is one file per catalog, so that foreign keys between schemas resolve within the file. Paste it into [dbdiagram.io](https://dbdiagram.io) for an ER diagram, or point `diff`, `generate-sql`, `validate` and `diff-files` at the directory just like a YAML/JSON one.
+
+```dbml
+Project "prod_catalog" {
+    database_type: 'Databricks'
+}
+
+TableGroup "main" [note: 'Main production schema'] {
+    "main"."users"
+}
+
+Table "main"."users" {
+    "id" bigint [not null, note: 'Primary key']
+    "email" string
+    "org_id" bigint
+    "settings" "struct<theme:string,beta:boolean>"
+
+    indexes {
+        ("id") [pk, name: 'pk_users']
+    }
+
+    Note: '''User accounts
+
+@table_type: MANAGED
+@tags: {"domain": "identity"}'''
+}
+
+Ref "fk_org": "main"."users"."org_id" > "orgs"."organizations"."id"
+```
+
+How the model maps to DBML:
+
+| Model | DBML |
+|---|---|
+| Catalog | `Project` (comment in its `Note`) |
+| Schema | `TableGroup` named after the schema (comment in its `note`); written for every schema, so empty schemas survive |
+| Table / column comment | `Note` / `note:` |
+| `nullable: false` | `not null` |
+| Primary key | `indexes { (...) [pk, name: '...'] }` |
+| Foreign key | `Ref "<name>": ... > ...` |
+| Complex types (`struct<...>`, `map<...>`) | double-quoted type |
+| `tags`, `owner`, `table_type`, `storage_location` | trailing `@key: value` lines in the note (`@tags` is a JSON object) |
+
+Everything round-trips: reading a written file gives back exactly the extracted model. Hand-written DBML (e.g. exported from dbdiagram) is accepted too — tables without a schema land in `public`, column `pk` and inline `ref:` settings are understood, and constructs with no Unity Catalog equivalent (enums, sticky notes, other indexes, defaults, many-to-many refs, TableGroups that don't match a schema) are ignored. A directory may hold several `.dbml` files, but each schema may be defined in only one of them.
+
+### Catalog document
+
 Without `--output-dir`, `extract` prints a single `Catalog` document to stdout instead — the same schema shape nested under a `schemas` list, with the catalog name as a top-level field:
 
 ```yaml
@@ -212,6 +261,12 @@ Include additional metadata (`owner`, `storage_location`) in the output:
 databricks-schema extract <catalog> --output-dir ./schemas/ --include-metadata
 ```
 
+Write a single DBML file (`./schemas/<catalog>.dbml`) instead — see [DBML](#dbml):
+
+```bash
+databricks-schema extract <catalog> --output-dir ./schemas/ --format dbml
+```
+
 Control the number of parallel workers (default: 4), useful for large schemas with many tags:
 
 ```bash
@@ -220,7 +275,7 @@ databricks-schema extract <catalog> --output-dir ./schemas/ --workers 8
 
 ### `diff`
 
-Compare the live catalog against previously extracted schema files (format auto-detected from the directory — YAML or JSON, not mixed):
+Compare the live catalog against previously extracted schema files (format auto-detected from the directory — YAML, JSON or DBML, not mixed):
 
 ```bash
 databricks-schema diff <catalog> ./schemas/
@@ -273,7 +328,7 @@ databricks-schema diff <catalog> ./schemas/ --format yaml
 
 ### `generate-sql`
 
-Generate Databricks Spark SQL statements to bring the live catalog in line with local schema files (format auto-detected, YAML or JSON, not mixed). Statements are printed to stdout by default:
+Generate Databricks Spark SQL statements to bring the live catalog in line with local schema files (format auto-detected — YAML, JSON or DBML, not mixed). Statements are printed to stdout by default:
 
 ```bash
 databricks-schema generate-sql <catalog> ./schemas/
@@ -367,7 +422,12 @@ yaml_text = catalog_to_yaml(catalog)
 schema = schema_from_yaml(open("schemas/main.yaml").read())
 print(schema.tables[0].columns)
 
-# Compare live catalog against local YAML files
+# DBML: one document per catalog
+from databricks_schema import catalog_from_dbml, catalog_to_dbml
+Path("schemas/my_catalog.dbml").write_text(catalog_to_dbml(catalog))
+catalog = catalog_from_dbml(Path("schemas/my_catalog.dbml").read_text())
+
+# Compare live catalog against local YAML files (fmt="json" / fmt="dbml" for other formats)
 result = diff_catalog_with_dir(catalog, Path("./schemas/"))
 if result.has_changes:
     for schema_diff in result.schemas:
