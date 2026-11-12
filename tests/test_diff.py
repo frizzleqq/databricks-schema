@@ -446,3 +446,69 @@ class TestDiffSchemaDirs:
         (d2 / "raw.yaml").write_text(schema_to_yaml(raw_new))
         result = diff_schema_dirs(d1, d2, schema_names=frozenset({"main"}))
         assert not result.has_changes
+
+
+class TestGrantsDiff:
+    def test_grants_ignored_without_flag(self):
+        live = Schema(name="main", grants={"analysts": ["SELECT"]})
+        stored = Schema(name="main")
+        assert diff_schemas(live, stored).status == "unchanged"
+
+    def test_schema_grants_reports_only_differing_principals(self):
+        live = Schema(
+            name="main",
+            grants={"analysts": ["USE_SCHEMA"], "engineers": ["SELECT"], "extra": ["SELECT"]},
+        )
+        stored = Schema(
+            name="main",
+            grants={"analysts": ["USE_SCHEMA"], "engineers": ["MODIFY", "SELECT"]},
+        )
+        result = diff_schemas(live, stored, include_grants=True)
+        assert result.status == "modified"
+        [fc] = result.changes
+        assert fc.field == "grants"
+        assert fc.old == {"engineers": ["MODIFY", "SELECT"]}
+        assert fc.new == {"engineers": ["SELECT"], "extra": ["SELECT"]}
+
+    def test_privilege_order_ignored(self):
+        live = Schema(name="main", grants={"a": ["SELECT", "MODIFY"]})
+        stored = Schema(name="main", grants={"a": ["MODIFY", "SELECT"]})
+        assert diff_schemas(live, stored, include_grants=True).status == "unchanged"
+
+    def test_table_grants_diff(self):
+        live = Schema(name="main", tables=[Table(name="t", grants={})])
+        stored = Schema(name="main", tables=[Table(name="t", grants={"a": ["SELECT"]})])
+        result = diff_schemas(live, stored, include_grants=True)
+        [td] = result.tables
+        assert td.changes[0].field == "grants"
+        assert td.changes[0].old == {"a": ["SELECT"]}
+        assert td.changes[0].new == {}
+
+    def test_diff_table_pair_grants(self):
+        live = Table(name="t", grants={"a": ["SELECT"]})
+        stored = Table(name="t")
+        assert diff_table_pair(live, stored).status == "unchanged"
+        assert diff_table_pair(live, stored, include_grants=True).status == "modified"
+
+    def test_diff_schema_dirs_grants(self, tmp_path):
+        d1, d2 = tmp_path / "a", tmp_path / "b"
+        d1.mkdir()
+        d2.mkdir()
+        (d1 / "main.yaml").write_text(schema_to_yaml(Schema(name="main", grants={"a": ["X"]})))
+        (d2 / "main.yaml").write_text(schema_to_yaml(Schema(name="main")))
+        assert not diff_schema_dirs(d1, d2).has_changes
+        assert diff_schema_dirs(d1, d2, include_grants=True).has_changes
+
+    def test_diff_catalogs_grants(self):
+        live = Catalog(name="c", schemas=[Schema(name="main", grants={"a": ["SELECT"]})])
+        stored = Catalog(name="c", schemas=[Schema(name="main")])
+        assert not diff_catalogs(live, stored).has_changes
+        assert diff_catalogs(live, stored, include_grants=True).has_changes
+
+    def test_diff_catalog_with_dir_grants(self, tmp_path):
+        (tmp_path / "main.yaml").write_text(
+            schema_to_yaml(Schema(name="main", grants={"a": ["SELECT"]}))
+        )
+        live = Catalog(name="c", schemas=[Schema(name="main")])
+        assert not diff_catalog_with_dir(live, tmp_path).has_changes
+        assert diff_catalog_with_dir(live, tmp_path, include_grants=True).has_changes

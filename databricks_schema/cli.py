@@ -185,6 +185,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             table_filter=table_filter,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
+            include_grants=args.include_grants,
         )
         print(catalog_serializer(catalog_obj))
         return
@@ -198,6 +199,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         table_filter=table_filter,
         include_metadata=args.include_metadata,
         include_tags=args.include_tags,
+        include_grants=args.include_grants,
     ):
         out_file = output_dir / f"{s.name}{ext}"
         out_file.write_text(serializer(s), encoding="utf-8")
@@ -255,6 +257,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             schema_filter=args.schema,
             include_metadata=args.include_metadata,
             include_tags=args.include_tags,
+            include_grants=args.include_grants,
         )
         result = diff_catalog_with_dir(
             catalog_obj,
@@ -262,6 +265,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
             schema_names=schema_names,
             fmt=fmt,
             include_metadata=args.include_metadata,
+            include_grants=args.include_grants,
         )
     else:
         if live_table is not None:
@@ -280,6 +284,7 @@ def _cmd_diff(args: argparse.Namespace) -> None:
                 table_filter=[live_table],
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             stored_catalog_obj = extractor.extract_catalog(
                 catalog_name=target_catalog,
@@ -287,10 +292,13 @@ def _cmd_diff(args: argparse.Namespace) -> None:
                 table_filter=[target_table],
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             live_t = _find_table(live_catalog_obj, live_schema, live_table)
             stored_t = _find_table(stored_catalog_obj, target_schema, target_table)
-            table_diff = diff_table_pair(live_t, stored_t, args.include_metadata)
+            table_diff = diff_table_pair(
+                live_t, stored_t, args.include_metadata, args.include_grants
+            )
             schema_status = "unchanged" if table_diff.status == "unchanged" else "modified"
             schema_diff = SchemaDiff(
                 name=live_schema,
@@ -311,16 +319,20 @@ def _cmd_diff(args: argparse.Namespace) -> None:
                 schema_filter=[live_schema],
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             stored_catalog_obj = extractor.extract_catalog(
                 catalog_name=target_catalog,
                 schema_filter=[target_schema],
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             live_s = _find_schema(live_catalog_obj, live_schema)
             stored_s = _find_schema(stored_catalog_obj, target_schema)
-            result = CatalogDiff(schemas=[diff_schemas(live_s, stored_s, args.include_metadata)])
+            result = CatalogDiff(
+                schemas=[diff_schemas(live_s, stored_s, args.include_metadata, args.include_grants)]
+            )
         else:
             schema_names = frozenset(args.schema) if args.schema else None
             logger.info(
@@ -331,18 +343,21 @@ def _cmd_diff(args: argparse.Namespace) -> None:
                 schema_filter=args.schema,
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             stored = extractor.extract_catalog(
                 catalog_name=target_catalog,
                 schema_filter=args.schema,
                 include_metadata=args.include_metadata,
                 include_tags=args.include_tags,
+                include_grants=args.include_grants,
             )
             result = diff_catalogs(
                 live,
                 stored,
                 schema_names=schema_names,
                 include_metadata=args.include_metadata,
+                include_grants=args.include_grants,
             )
 
     if args.output_format in ("json", "yaml"):
@@ -412,6 +427,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         schema_filter=args.schema,
         include_metadata=args.include_metadata,
         include_tags=args.include_tags,
+        include_grants=args.include_grants,
     )
 
     live = {s.name: s for s in catalog_obj.schemas}
@@ -422,7 +438,7 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         if name not in live:
             sd: SchemaDiff = SchemaDiff(name=name, status="removed")
         else:
-            sd = diff_schemas(live[name], stored_schema, args.include_metadata)
+            sd = diff_schemas(live[name], stored_schema, args.include_metadata, args.include_grants)
 
         if not sd.has_changes:
             continue
@@ -530,6 +546,7 @@ def _cmd_diff_files(args: argparse.Namespace) -> None:
         fmt2=fmt2,
         schema_names=frozenset(args.schema) if args.schema else None,
         include_metadata=args.include_metadata,
+        include_grants=args.include_grants,
     )
 
     if args.output_format in ("json", "yaml"):
@@ -628,6 +645,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Include Unity Catalog tags in output (extra API calls per entity)",
     )
     extract_p.add_argument(
+        "--include-grants",
+        action="store_true",
+        dest="include_grants",
+        help="Include direct (non-inherited) grants in output (extra API call per schema/table)",
+    )
+    extract_p.add_argument(
         "--format",
         "-f",
         choices=["yaml", "json"],
@@ -682,6 +705,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Include Unity Catalog tags in comparison (extra API calls per entity)",
     )
     diff_p.add_argument(
+        "--include-grants",
+        action="store_true",
+        dest="include_grants",
+        help="Include direct (non-inherited) grants in comparison (extra API call per object)",
+    )
+    diff_p.add_argument(
         "--include-metadata",
         action="store_true",
         dest="include_metadata",
@@ -720,7 +749,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-drop",
         action="store_true",
         dest="allow_drop",
-        help="Emit real DROP statements instead of commented-out ones",
+        help="Emit real DROP and REVOKE statements instead of commented-out ones",
     )
     gen_sql_p.add_argument(
         "--schema",
@@ -734,6 +763,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="include_tags",
         help="Include Unity Catalog tags in comparison (extra API calls per entity)",
+    )
+    gen_sql_p.add_argument(
+        "--include-grants",
+        action="store_true",
+        dest="include_grants",
+        help="Include direct (non-inherited) grants in comparison (extra API call per object)",
     )
     gen_sql_p.add_argument(
         "--include-metadata",
@@ -789,6 +824,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="include_metadata",
         help="Include additional metadata in comparison (owner)",
+    )
+    diff_files_p.add_argument(
+        "--include-grants",
+        action="store_true",
+        dest="include_grants",
+        help="Include direct (non-inherited) grants in comparison",
     )
     _add_output_format_arg(diff_files_p)
     _add_quiet_arg(diff_files_p)
