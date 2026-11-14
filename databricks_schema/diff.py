@@ -61,6 +61,42 @@ def _compare_fields(stored: Any, live: Any, field_names: list[str]) -> list[Fiel
     return changes
 
 
+def _grants_change(stored: dict[str, list[str]], live: dict[str, list[str]]) -> FieldChange | None:
+    """Compare grants per principal, reporting only the principals whose privileges differ.
+
+    Privilege order is ignored. A principal missing from one side is absent from that side's
+    dict in the resulting FieldChange (old = stored, new = live).
+    """
+    old: dict[str, list[str]] = {}
+    new: dict[str, list[str]] = {}
+    for principal in sorted(set(stored) | set(live)):
+        stored_privs = set(stored.get(principal, []))
+        live_privs = set(live.get(principal, []))
+        if stored_privs == live_privs:
+            continue
+        if stored_privs:
+            old[principal] = sorted(stored_privs)
+        if live_privs:
+            new[principal] = sorted(live_privs)
+    if not old and not new:
+        return None
+    return FieldChange(field="grants", old=old, new=new)
+
+
+def _compare_object(
+    stored: Schema | Table,
+    live: Schema | Table,
+    field_names: list[str],
+    include_grants: bool,
+) -> list[FieldChange]:
+    changes = _compare_fields(stored, live, field_names)
+    if include_grants:
+        grants_change = _grants_change(stored.grants, live.grants)
+        if grants_change is not None:
+            changes.append(grants_change)
+    return changes
+
+
 def _diff_columns(live_cols: list[Column], stored_cols: list[Column]) -> list[ColumnDiff]:
     live_map = {c.name: c for c in live_cols}
     stored_map = {c.name: c for c in stored_cols}
@@ -84,7 +120,10 @@ def _diff_columns(live_cols: list[Column], stored_cols: list[Column]) -> list[Co
 
 
 def _diff_tables(
-    live_tables: list[Table], stored_tables: list[Table], include_metadata: bool = False
+    live_tables: list[Table],
+    stored_tables: list[Table],
+    include_metadata: bool = False,
+    include_grants: bool = False,
 ) -> list[TableDiff]:
     live_map = {t.name: t for t in live_tables}
     stored_map = {t.name: t for t in stored_tables}
@@ -103,7 +142,7 @@ def _diff_tables(
             diffs.append(TableDiff(name=name, status="added"))
         else:
             stored_table = stored_map[name]
-            changes = _compare_fields(stored_table, live_table, table_fields)
+            changes = _compare_object(stored_table, live_table, table_fields, include_grants)
             col_diffs = _diff_columns(live_table.columns, stored_table.columns)
             if changes or col_diffs:
                 diffs.append(
@@ -113,22 +152,26 @@ def _diff_tables(
     return diffs
 
 
-def diff_schemas(live: Schema, stored: Schema, include_metadata: bool = False) -> SchemaDiff:
+def diff_schemas(
+    live: Schema, stored: Schema, include_metadata: bool = False, include_grants: bool = False
+) -> SchemaDiff:
     """Compare a live Schema against a stored Schema.
 
     Returns a SchemaDiff describing what changed between the stored YAML state
-    and the live catalog state.
+    and the live catalog state. Grants are only compared when include_grants is True.
     """
     schema_fields = ["comment", "tags"]
     if include_metadata:
         schema_fields.insert(1, "owner")
-    changes = _compare_fields(stored, live, schema_fields)
-    table_diffs = _diff_tables(live.tables, stored.tables, include_metadata)
+    changes = _compare_object(stored, live, schema_fields, include_grants)
+    table_diffs = _diff_tables(live.tables, stored.tables, include_metadata, include_grants)
     status = "modified" if (changes or table_diffs) else "unchanged"
     return SchemaDiff(name=live.name, status=status, changes=changes, tables=table_diffs)
 
 
-def diff_table_pair(live: Table, stored: Table, include_metadata: bool = False) -> TableDiff:
+def diff_table_pair(
+    live: Table, stored: Table, include_metadata: bool = False, include_grants: bool = False
+) -> TableDiff:
     """Compare two Tables directly, regardless of whether their names match.
 
     Used for `catalog.schema.table` vs `catalog.schema.table` CLI diffs, where the two
@@ -137,7 +180,7 @@ def diff_table_pair(live: Table, stored: Table, include_metadata: bool = False) 
     table_fields = ["table_type", "comment", "primary_key", "foreign_keys", "tags"]
     if include_metadata:
         table_fields.insert(2, "owner")
-    changes = _compare_fields(stored, live, table_fields)
+    changes = _compare_object(stored, live, table_fields, include_grants)
     columns = _diff_columns(live.columns, stored.columns)
     status = "modified" if (changes or columns) else "unchanged"
     return TableDiff(name=live.name, status=status, changes=changes, columns=columns)
@@ -150,6 +193,7 @@ def diff_schema_dirs(
     fmt2: SchemaFormat = "yaml",
     schema_names: frozenset[str] | None = None,
     include_metadata: bool = False,
+    include_grants: bool = False,
 ) -> CatalogDiff:
     """Compare two local directories of schema files.
 
@@ -172,7 +216,9 @@ def diff_schema_dirs(
         if name not in live:
             schema_diffs.append(SchemaDiff(name=name, status="removed"))
         else:
-            schema_diffs.append(diff_schemas(live[name], stored_schema, include_metadata))
+            schema_diffs.append(
+                diff_schemas(live[name], stored_schema, include_metadata, include_grants)
+            )
     for name in live:
         if name not in stored:
             schema_diffs.append(SchemaDiff(name=name, status="added"))
@@ -186,6 +232,7 @@ def diff_catalogs(
     ignore_added: frozenset[str] = frozenset({"default"}),
     schema_names: frozenset[str] | None = None,
     include_metadata: bool = False,
+    include_grants: bool = False,
 ) -> CatalogDiff:
     """Compare two live Catalogs directly (no local files involved).
 
@@ -208,7 +255,9 @@ def diff_catalogs(
         if name not in live_map:
             schema_diffs.append(SchemaDiff(name=name, status="removed"))
         else:
-            schema_diffs.append(diff_schemas(live_map[name], stored_schema, include_metadata))
+            schema_diffs.append(
+                diff_schemas(live_map[name], stored_schema, include_metadata, include_grants)
+            )
 
     for name in live_map:
         if name not in stored_map and name not in ignore_added:
@@ -224,6 +273,7 @@ def diff_catalog_with_dir(
     schema_names: frozenset[str] | None = None,
     fmt: SchemaFormat = "yaml",
     include_metadata: bool = False,
+    include_grants: bool = False,
 ) -> CatalogDiff:
     """Compare a Catalog against schema files in schema_dir.
 
@@ -248,7 +298,9 @@ def diff_catalog_with_dir(
         if name not in live:
             schema_diffs.append(SchemaDiff(name=name, status="removed"))
         else:
-            schema_diffs.append(diff_schemas(live[name], stored_schema, include_metadata))
+            schema_diffs.append(
+                diff_schemas(live[name], stored_schema, include_metadata, include_grants)
+            )
 
     for name in live:
         if name not in stored and name not in ignore_added:

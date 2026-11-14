@@ -58,6 +58,42 @@ def _tag_stmts(prefix: str, old_tags: dict[str, str], new_tags: dict[str, str]) 
     return stmts
 
 
+def _privileges_sql(privileges: list[str]) -> str:
+    """Render SDK privilege names as SQL keywords (e.g. USE_SCHEMA -> USE SCHEMA)."""
+    return ", ".join(p.replace("_", " ") for p in sorted(privileges))
+
+
+def _grant_stmts(
+    securable: str,
+    ref: str,
+    old_grants: dict[str, list[str]],
+    new_grants: dict[str, list[str]],
+    allow_drop: bool,
+) -> list[str]:
+    """Generate GRANT / REVOKE statements for a schema or table.
+
+    old_grants = stored/target state, new_grants = live/current state.
+    Privileges in stored but not live are granted; privileges in live but not stored are
+    revoked. REVOKE is destructive, so it is commented out unless allow_drop is True.
+    """
+    stmts: list[str] = []
+    for principal in sorted(set(old_grants) | set(new_grants)):
+        stored_privs = set(old_grants.get(principal, []))
+        live_privs = set(new_grants.get(principal, []))
+        to_grant = sorted(stored_privs - live_privs)
+        to_revoke = sorted(live_privs - stored_privs)
+        if to_grant:
+            stmts.append(
+                f"GRANT {_privileges_sql(to_grant)} ON {securable} {ref} TO {_q(principal)};"
+            )
+        if to_revoke:
+            revoke_stmt = (
+                f"REVOKE {_privileges_sql(to_revoke)} ON {securable} {ref} FROM {_q(principal)};"
+            )
+            stmts.append(revoke_stmt if allow_drop else f"-- {revoke_stmt}")
+    return stmts
+
+
 def _pk_stmts(
     tref: str, table_name: str, old_pk: PrimaryKey | None, new_pk: PrimaryKey | None
 ) -> list[str]:
@@ -194,6 +230,7 @@ def _table_diff_stmts(
                 stmts.append(f"ALTER TABLE {tref} SET OWNER TO {_q(stored_table.owner)};")
             if stored_table.tags:
                 stmts.append(f"ALTER TABLE {tref} SET TAGS {_tags_set(stored_table.tags)};")
+            stmts.extend(_grant_stmts("TABLE", tref, stored_table.grants, {}, allow_drop))
 
     elif table_diff.status == "added":
         drop_stmt = f"DROP TABLE {tref};"
@@ -219,6 +256,8 @@ def _table_diff_stmts(
                     stmts.append(f"ALTER TABLE {tref} SET OWNER TO {_q(str(fc.old))};")
             elif fc.field == "tags":
                 stmts.extend(_tag_stmts(f"ALTER TABLE {tref}", fc.old or {}, fc.new or {}))
+            elif fc.field == "grants":
+                stmts.extend(_grant_stmts("TABLE", tref, fc.old or {}, fc.new or {}, allow_drop))
             elif fc.field == "primary_key":
                 stmts.extend(_pk_stmts(tref, table_diff.name, fc.old, fc.new))
             elif fc.field == "foreign_keys":
@@ -247,7 +286,8 @@ def schema_diff_to_sql(
         catalog_name: Catalog name for fully-qualified references.
         schema_diff: Diff result from diff_schemas() or a manually constructed SchemaDiff.
         stored_schema: The stored (local) Schema; required for "removed" and "modified" status.
-        allow_drop: If True, emit real DROP statements; otherwise emit commented-out versions.
+        allow_drop: If True, emit real DROP and REVOKE statements; otherwise emit commented-out
+            versions.
 
     Returns:
         SQL string with statements separated by newlines.
@@ -265,6 +305,7 @@ def schema_diff_to_sql(
                 stmts.append(f"ALTER SCHEMA {sref} SET OWNER TO {_q(stored_schema.owner)};")
             if stored_schema.tags:
                 stmts.append(f"ALTER SCHEMA {sref} SET TAGS {_tags_set(stored_schema.tags)};")
+            stmts.extend(_grant_stmts("SCHEMA", sref, stored_schema.grants, {}, allow_drop))
             for table in stored_schema.tables:
                 stmts.append(_create_table(catalog_name, schema_diff.name, table))
                 tref = _table_ref(catalog_name, schema_diff.name, table.name)
@@ -272,6 +313,7 @@ def schema_diff_to_sql(
                     stmts.append(f"ALTER TABLE {tref} SET OWNER TO {_q(table.owner)};")
                 if table.tags:
                     stmts.append(f"ALTER TABLE {tref} SET TAGS {_tags_set(table.tags)};")
+                stmts.extend(_grant_stmts("TABLE", tref, table.grants, {}, allow_drop))
 
     elif schema_diff.status == "added":
         # Schema is in live but not in stored → DROP it (commented by default)
@@ -297,6 +339,8 @@ def schema_diff_to_sql(
                     stmts.append(f"ALTER SCHEMA {sref} SET OWNER TO {_q(str(fc.old))};")
             elif fc.field == "tags":
                 stmts.extend(_tag_stmts(f"ALTER SCHEMA {sref}", fc.old or {}, fc.new or {}))
+            elif fc.field == "grants":
+                stmts.extend(_grant_stmts("SCHEMA", sref, fc.old or {}, fc.new or {}, allow_drop))
 
         for table_diff in schema_diff.tables:
             stmts.extend(

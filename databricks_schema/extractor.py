@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.errors import NotFound
+from databricks.sdk.errors import NotFound, PermissionDenied
+from databricks.sdk.service.catalog import SecurableType
 
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 
@@ -35,6 +36,42 @@ class CatalogExtractor:
             logger.warning("Not found when fetching tags for %s '%s'", entity_type, entity_name)
         return tags
 
+    def _fetch_grants(self, securable_type: SecurableType, full_name: str) -> dict[str, list[str]]:
+        """Return the privileges granted directly on a securable, keyed by principal.
+
+        Uses grants.list(), which excludes privileges inherited from parent securables, so
+        stored files only record grants made on the object itself.
+        """
+        grants: dict[str, set[str]] = {}
+        try:
+            encoded_name = quote(full_name, safe=".")
+            for assignment in self.client.grants.list(securable_type.value, encoded_name):
+                principal = getattr(assignment, "principal", None)
+                if not principal:
+                    # Deleted principals come back with only a principal_id; nothing to grant to.
+                    logger.warning(
+                        "Skipping grant without principal name on %s '%s'",
+                        securable_type.value.lower(),
+                        full_name,
+                    )
+                    continue
+                privileges = grants.setdefault(principal, set())
+                for privilege in getattr(assignment, "privileges", None) or []:
+                    privileges.add(privilege.value if hasattr(privilege, "value") else privilege)
+        except NotFound:
+            logger.warning(
+                "Not found when fetching grants for %s '%s'",
+                securable_type.value.lower(),
+                full_name,
+            )
+        except PermissionDenied:
+            logger.warning(
+                "Permission denied when fetching grants for %s '%s'",
+                securable_type.value.lower(),
+                full_name,
+            )
+        return {p: sorted(privs) for p, privs in sorted(grants.items()) if privs}
+
     def iter_schemas(
         self,
         catalog_name: str,
@@ -42,6 +79,7 @@ class CatalogExtractor:
         include_metadata: bool = False,
         include_tags: bool = False,
         table_filter: list[str] | None = None,
+        include_grants: bool = False,
     ) -> Iterator[Schema]:
         for sdk_schema in self.client.schemas.list(catalog_name=catalog_name):
             schema_name = sdk_schema.name or ""
@@ -50,7 +88,12 @@ class CatalogExtractor:
             if schema_filter and schema_name not in schema_filter:
                 continue
             yield self._extract_schema(
-                catalog_name, sdk_schema, include_metadata, include_tags, table_filter
+                catalog_name,
+                sdk_schema,
+                include_metadata,
+                include_tags,
+                table_filter,
+                include_grants,
             )
 
     def extract_catalog(
@@ -60,6 +103,7 @@ class CatalogExtractor:
         include_metadata: bool = False,
         include_tags: bool = False,
         table_filter: list[str] | None = None,
+        include_grants: bool = False,
     ) -> Catalog:
         sdk_catalog = self.client.catalogs.get(catalog_name)
         catalog_tags = self._fetch_tags("catalogs", catalog_name) if include_tags else {}
@@ -71,6 +115,7 @@ class CatalogExtractor:
                 include_metadata,
                 include_tags,
                 table_filter,
+                include_grants,
             )
         )
 
@@ -88,10 +133,16 @@ class CatalogExtractor:
         include_metadata: bool = False,
         include_tags: bool = False,
         table_filter: list[str] | None = None,
+        include_grants: bool = False,
     ) -> Schema:
         schema_name = sdk_schema.name or ""
         schema_tags = (
             self._fetch_tags("schemas", f"{catalog_name}.{schema_name}") if include_tags else {}
+        )
+        schema_grants = (
+            self._fetch_grants(SecurableType.SCHEMA, f"{catalog_name}.{schema_name}")
+            if include_grants
+            else {}
         )
 
         # tables.list returns full TableInfo (columns + constraints included) — no tables.get needed
@@ -103,7 +154,7 @@ class CatalogExtractor:
 
         def extract_one(sdk_table) -> Table:
             return self._extract_table(
-                catalog_name, schema_name, sdk_table, include_metadata, include_tags
+                catalog_name, schema_name, sdk_table, include_metadata, include_tags, include_grants
             )
 
         if self.max_workers > 1 and len(sdk_tables) > 1:
@@ -118,6 +169,7 @@ class CatalogExtractor:
             owner=getattr(sdk_schema, "owner", None) if include_metadata else None,
             tables=tables,
             tags=schema_tags,
+            grants=schema_grants,
         )
 
     def _extract_table(
@@ -127,10 +179,12 @@ class CatalogExtractor:
         sdk_table,
         include_metadata: bool = False,
         include_tags: bool = False,
+        include_grants: bool = False,
     ) -> Table:
         table_name = sdk_table.name or ""
         full_name = f"{catalog_name}.{schema_name}.{table_name}"
         table_tags = self._fetch_tags("tables", full_name) if include_tags else {}
+        table_grants = self._fetch_grants(SecurableType.TABLE, full_name) if include_grants else {}
 
         # Build columns sorted by position
         sdk_columns = list(getattr(sdk_table, "columns", None) or [])
@@ -214,6 +268,7 @@ class CatalogExtractor:
             primary_key=primary_key,
             foreign_keys=foreign_keys,
             tags=table_tags,
+            grants=table_grants,
             storage_location=(
                 getattr(sdk_table, "storage_location", None) if include_metadata else None
             ),

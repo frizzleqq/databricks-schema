@@ -213,6 +213,7 @@ class _FakeExtractor:
         include_metadata=False,
         include_tags=False,
         table_filter=None,
+        include_grants=False,
     ) -> Catalog:
         catalog = self._catalogs[catalog_name]
         schemas = []
@@ -504,3 +505,23 @@ class TestDbmlFormat:
         (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
         assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
         assert "databricks-schema[dbml]" in capsys.readouterr().err
+
+
+class TestDiffFilesGrants:
+    def test_grants_only_compared_with_flag(self, tmp_path, monkeypatch, capsys):
+        dir1, dir2 = tmp_path / "old", tmp_path / "new"
+        _write_schema(dir1, "main", "name: main\ngrants:\n  analysts: [USE_SCHEMA]\n")
+        _write_schema(dir2, "main", "name: main\n")
+
+        assert _run(monkeypatch, ["diff-files", str(dir1), str(dir2), "--quiet"]) == 0
+        capsys.readouterr()
+
+        exit_code = _run(
+            monkeypatch,
+            ["diff-files", str(dir1), str(dir2), "--include-grants", "-f", "json", "--quiet"],
+        )
+        assert exit_code == 1
+        data = json.loads(capsys.readouterr().out)
+        assert data["schemas"][0]["changes"] == [
+            {"field": "grants", "old": {"analysts": ["USE_SCHEMA"]}, "new": {}}
+        ]

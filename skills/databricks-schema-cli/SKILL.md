@@ -1,6 +1,6 @@
 ---
 name: databricks-schema-cli
-description: Explore, snapshot, diff, and generate migration SQL for Databricks Unity Catalog schemas using the `databricks-schema` CLI. Use this whenever the user wants to list catalogs/schemas in a Databricks workspace, pull a Unity Catalog schema (tables, columns, keys, tags) into version-controllable YAML/JSON or a DBML ER diagram (dbdiagram.io), compare a live catalog against stored schema files or two schema directories against each other, validate schema files, or generate Spark SQL DDL to reconcile a catalog with a desired state — even if they just say "what's in this Databricks catalog" or "diff prod vs what's checked in" without naming the tool.
+description: Explore, snapshot, diff, and generate migration SQL for Databricks Unity Catalog schemas using the `databricks-schema` CLI. Use this whenever the user wants to list catalogs/schemas in a Databricks workspace, pull a Unity Catalog schema (tables, columns, keys, tags, grants) into version-controllable YAML/JSON or a DBML ER diagram (dbdiagram.io), compare a live catalog against stored schema files or two schema directories against each other, validate schema files, or generate Spark SQL DDL to reconcile a catalog with a desired state — even if they just say "what's in this Databricks catalog" or "diff prod vs what's checked in" without naming the tool.
 ---
 
 # Databricks Unity Catalog exploration (`databricks-schema`)
@@ -33,6 +33,7 @@ Read this once — command sections below only call out what's *different* for t
 | `catalog.schema[.table]` dotted arg | `extract`'s `catalog`; `diff`'s `catalog` and `target` (when `target` isn't a directory) | Shortcut for filtering to one schema or table instead of `--schema`. Exits **2** if combined with `--schema`. On `diff`, both sides must dot to the same depth (`cat.schema` vs `cat` is an error), but the schema/table **names need not match across sides** — this is how you diff a differently-named copy (e.g. a `_test` schema/table) against the "real" one, same or different catalog. Can't be used on `catalog` when `diff`'s `target` is a directory (use `--schema` there instead). |
 | `--include-metadata` | `extract`, `diff`, `generate-sql`, `diff-files` | Adds `owner` to output/comparison. `extract` additionally adds `storage_location` (not compared elsewhere). Default: off. |
 | `--include-tags` | `extract`, `diff`, `generate-sql` | Adds Unity Catalog tag lookups (extra API call per entity). Default: off. |
+| `--include-grants` | `extract`, `diff`, `generate-sql`, `diff-files` | Adds schema/table `grants` (principal → privileges) to output/comparison. Only grants made **directly** on the object — privileges inherited from the catalog/schema are not included. Extra API call per schema/table. Without it, grants in stored files are ignored by comparisons. Objects whose grants can't be read (e.g. permission denied) are logged as warnings and come back with no grants. Default: off. |
 | `--quiet`/`-q` | `extract`, `diff`, `generate-sql`, `diff-files` | Suppresses stderr progress lines (e.g. `Extracting catalog 'X'...`). Errors always print. Use for agentic/scripted runs — actual output and exit code are unaffected. |
 | `--output-dir`/`-o DIR` | `extract`, `generate-sql` | Write one file per schema instead of printing to stdout. |
 | `--workers N` (default 4) | `extract`, `diff`, `generate-sql` | Parallel table-extraction workers; raise for large catalogs. |
@@ -89,12 +90,17 @@ name: main
 comment: Main production schema
 tags:
   env: prod
+grants:                       # with --include-grants; principal -> privileges
+  analysts: [USE_SCHEMA]
 tables:
   - name: users
     table_type: MANAGED
     comment: User accounts
     tags:
       domain: identity
+    grants:
+      analysts: [SELECT]
+      data-engineers: [MODIFY, SELECT]
     columns:
       - name: id
         data_type: bigint
@@ -145,7 +151,9 @@ Text output is a tree with `+` (added), `-` (removed), `~` (modified) markers:
 
 `--format json`/`yaml` gives the same comparison as a `{"schemas": [...]}` document instead —
 per-schema `status` (`added`/`removed`/`modified`/`unchanged`), `changes` (field-level `old`/`new`
-pairs), and nested `tables`/`columns`. Run `databricks-schema json-schema diff` for the exact
+pairs), and nested `tables`/`columns`. A `grants` change lists only the principals whose
+privileges differ (`old` = stored side, `new` = live side; a principal missing from a side is
+absent from that side's dict). Run `databricks-schema json-schema diff` for the exact
 shape.
 
 **Exit codes matter — use them instead of parsing stdout for a yes/no:**
@@ -175,8 +183,9 @@ databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/  
 ```
 
 Databricks Spark SQL DDL to bring the *live* catalog in line with the *stored* files
-(create/alter tables and columns, add/drop keys, etc.). Destructive statements (`DROP SCHEMA`,
-`DROP TABLE`, `DROP COLUMN`) are commented out by default — pass `--allow-drop` to make them
+(create/alter tables and columns, add/drop keys, `GRANT`/`REVOKE` with `--include-grants`,
+etc.). Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`, `REVOKE`) are
+commented out by default — pass `--allow-drop` to make them
 executable. Treat this as review-then-run, not something to pipe straight into execution,
 especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) become
 `-- TODO: unsupported change: ...` comments rather than being silently dropped.
