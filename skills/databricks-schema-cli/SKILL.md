@@ -184,9 +184,10 @@ databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/  
 
 Databricks Spark SQL DDL to bring the *live* catalog in line with the *stored* files
 (create/alter tables and columns, add/drop keys, `GRANT`/`REVOKE` with `--include-grants`,
-etc.). Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`, `REVOKE`) are
-commented out by default — pass `--allow-drop` to make them
-executable. Treat this as review-then-run, not something to pipe straight into execution,
+etc.). Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`,
+`DROP PRIMARY KEY`, `DROP FOREIGN KEY`, `REVOKE`) are commented out by default — pass
+`--allow-drop` to make them executable. A PK/FK that must be replaced (drop + re-add) has its
+`ADD` commented out too unless `--allow-drop` is set, since it would fail while the old key exists. Treat this as review-then-run, not something to pipe straight into execution,
 especially with `--allow-drop`. Unsupported changes (e.g. `table_type`) become
 `-- TODO: unsupported change: ...` comments rather than being silently dropped.
 
