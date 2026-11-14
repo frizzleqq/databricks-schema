@@ -53,7 +53,7 @@ skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to dri
 - `yaml_io.py` has parallel YAML and JSON functions (`schema_to_yaml`/`schema_to_json`, etc.)
 - `diff_catalog_with_dir` / `diff_schema_dirs` / `load_schema_dir` take `fmt: SchemaFormat` (`"yaml" | "json" | "dbml"`, default `"yaml"`)
 - DBML is one document per catalog (`extract -f dbml -o DIR` writes `DIR/<catalog>.dbml`): Catalog → `Project`, Schema → `TableGroup` (always emitted), PK → `indexes { (...) [pk] }`, FK → `Ref`
-- DBML has no key/value metadata: tags/owner/table_type/storage_location are trailing `@key: value` lines in notes (`@tags` = JSON object); writer output must round-trip exactly and stay parseable by `@dbml/core`
+- DBML has no key/value metadata: tags/grants/owner/table_type/storage_location are trailing `@key: value` lines in notes (`@tags`/`@grants` = JSON objects); writer output must round-trip exactly and stay parseable by `@dbml/core`
 - PyDBML is optional (`databricks-schema[dbml]` extra; also in the `dev` group): `dbml_io` imports it in a top-level `try/except ImportError` setting `PYDBML_AVAILABLE`; writing DBML must never need it, readers raise `DbmlDependencyError` (CLI exits 2)
 - `dbml_io` parses via PyDBML's grammar (`pydbml.definitions`) but resolves refs itself, so refs to tables outside the file are kept; never build a PyDBML `Database` (it rejects such refs and reflows note text) and never use PyDBML's renderer (it leaves complex types unquoted)
 - For DBML directories, `--schema` filters match schema names (YAML/JSON match file stems)

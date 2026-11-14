@@ -11,13 +11,15 @@ Mapping between the models and DBML:
 - PrimaryKey -> ``indexes { ("a", "b") [pk, name: '...'] }``
 - ForeignKey -> ``Ref "<name>": "s"."t".("a") > "rs"."rt".("x")``
 
-DBML has no place for key/value metadata, so tags, owner, table_type and storage_location are
-appended to the relevant note as trailing ``@key: value`` lines (tags as a JSON object)::
+DBML has no place for key/value metadata, so tags, grants, owner, table_type and storage_location
+are appended to the relevant note as trailing ``@key: value`` lines (tags and grants as JSON
+objects)::
 
     Note: '''Orders placed by customers
 
     @table_type: MANAGED
-    @tags: {"pii": "false"}'''
+    @tags: {"pii": "false"}
+    @grants: {"analysts": ["SELECT"]}'''
 
 Writing has no extra dependencies. Reading needs PyDBML (``pip install
 'databricks-schema[dbml]'``); without it the readers raise DbmlDependencyError.
@@ -68,7 +70,7 @@ logger = logging.getLogger(__name__)
 
 _INDENT = "    "
 _PLAIN_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\(\d+(,\d+)*\))?$")
-_META_LINE = re.compile(r"^@(owner|table_type|storage_location|tags): ?(.*)$")
+_META_LINE = re.compile(r"^@(owner|table_type|storage_location|tags|grants): ?(.*)$")
 _DEFAULT_SCHEMA = "public"
 
 
@@ -122,7 +124,7 @@ def _note_text(comment: str | None, meta: dict[str, Any]) -> str | None:
     for key, value in meta.items():
         if value is None or value == {}:
             continue
-        if key == "tags":
+        if key in ("tags", "grants"):
             value = json.dumps(value, ensure_ascii=False, sort_keys=False)
         meta_lines.append(f"@{key}: {value}")
     if not meta_lines:
@@ -163,6 +165,7 @@ def _write_table(schema_name: str, table: Table) -> list[str]:
             "table_type": table.table_type.value if table.table_type else None,
             "storage_location": table.storage_location,
             "tags": table.tags,
+            "grants": table.grants,
         },
     )
     if note is not None:
@@ -180,7 +183,9 @@ def _write_fk(schema_name: str, table: Table, fk: ForeignKey) -> str:
 
 def _write_schema_blocks(schema: Schema) -> list[str]:
     blocks: list[str] = []
-    note = _note_text(schema.comment, {"owner": schema.owner, "tags": schema.tags})
+    note = _note_text(
+        schema.comment, {"owner": schema.owner, "tags": schema.tags, "grants": schema.grants}
+    )
     head = f"TableGroup {_ident(schema.name)}"
     if note is not None:
         head += f" [note: {_string(note)}]"
@@ -240,14 +245,19 @@ def _parse_note(note: NoteBlueprint | None) -> _Note:
         if m is None:
             break
         key, value = m.group(1), m.group(2)
-        if key == "tags":
+        if key in ("tags", "grants"):
             try:
                 parsed = json.loads(value)
             except json.JSONDecodeError as e:
-                raise DbmlParseError(f"Invalid @tags JSON in note: {value!r}") from e
+                raise DbmlParseError(f"Invalid @{key} JSON in note: {value!r}") from e
             if not isinstance(parsed, dict):
-                raise DbmlParseError(f"@tags must be a JSON object, got: {value!r}")
-            meta[key] = {str(k): str(v) for k, v in parsed.items()}
+                raise DbmlParseError(f"@{key} must be a JSON object, got: {value!r}")
+            if key == "tags":
+                meta[key] = {str(k): str(v) for k, v in parsed.items()}
+            else:
+                if not all(isinstance(v, list) for v in parsed.values()):
+                    raise DbmlParseError(f"@grants values must be lists, got: {value!r}")
+                meta[key] = {str(k): [str(p) for p in v] for k, v in parsed.items()}
         else:
             meta[key] = value
         lines.pop()
@@ -317,6 +327,7 @@ def _parse(text: str) -> _Parsed:
         s.comment = note.comment
         s.owner = note.meta.get("owner")
         s.tags = note.meta.get("tags", {})
+        s.grants = note.meta.get("grants", {})
 
     tables: dict[tuple[str, str], Table] = {}
     for bp in table_bps:
@@ -355,6 +366,7 @@ def _parse(text: str) -> _Parsed:
             comment=note.comment,
             owner=note.meta.get("owner"),
             tags=note.meta.get("tags", {}),
+            grants=note.meta.get("grants", {}),
             storage_location=note.meta.get("storage_location"),
             columns=columns,
             primary_key=primary_key,

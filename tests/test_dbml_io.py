@@ -27,6 +27,7 @@ def _full_catalog() -> Catalog:
                 comment="Sales data",
                 owner="bob",
                 tags={"domain": "sales"},
+                grants={"analysts": ["USE_SCHEMA"]},
                 tables=[
                     Table(
                         name="orders",
@@ -35,6 +36,7 @@ def _full_catalog() -> Catalog:
                         owner="alice",
                         storage_location="s3://bucket/orders",
                         tags={"pii": "false"},
+                        grants={"analysts": ["MODIFY", "SELECT"], "etl": ["ALL_PRIVILEGES"]},
                         columns=[
                             Column(
                                 name="id",
@@ -135,6 +137,8 @@ class TestWriterOutput:
         assert "@owner: alice" in text
         assert "@storage_location: s3://bucket/orders" in text
         assert '@tags: {"pii": "false"}' in text
+        assert '@grants: {"analysts": ["MODIFY", "SELECT"], "etl": ["ALL_PRIVILEGES"]}' in text
+        assert '@grants: {"analysts": ["USE_SCHEMA"]}' in text
 
     def test_primary_key_and_ref(self):
         text = catalog_to_dbml(_full_catalog())
@@ -255,6 +259,12 @@ class TestErrors:
     def test_invalid_tags_json(self):
         text = "Table s.t {\n a int [note: '@tags: not-json']\n}\n"
         with pytest.raises(DbmlParseError, match="@tags"):
+            schemas_from_dbml(text)
+
+    @pytest.mark.parametrize("grants", ["not-json", '["SELECT"]', '{"bob": "SELECT"}'])
+    def test_invalid_grants(self, grants):
+        text = f"Table s.t {{\n a int\n Note: '@grants: {grants}'\n}}\n"
+        with pytest.raises(DbmlParseError, match="@grants"):
             schemas_from_dbml(text)
 
 

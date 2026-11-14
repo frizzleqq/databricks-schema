@@ -191,7 +191,7 @@ How the model maps to DBML:
 | Primary key | `indexes { (...) [pk, name: '...'] }` |
 | Foreign key | `Ref "<name>": ... > ...` |
 | Complex types (`struct<...>`, `map<...>`) | double-quoted type |
-| `tags`, `owner`, `table_type`, `storage_location` | trailing `@key: value` lines in the note (`@tags` is a JSON object) |
+| `tags`, `grants`, `owner`, `table_type`, `storage_location` | trailing `@key: value` lines in the note (`@tags` and `@grants` are JSON objects) |
 
 Everything round-trips: reading a written file gives back exactly the extracted model. Hand-written DBML (e.g. exported from dbdiagram) is accepted too — tables without a schema land in `public`, column `pk` and inline `ref:` settings are understood, and constructs with no Unity Catalog equivalent (enums, sticky notes, other indexes, defaults, many-to-many refs, TableGroups that don't match a schema) are ignored. A directory may hold several `.dbml` files, but each schema may be defined in only one of them.
 
