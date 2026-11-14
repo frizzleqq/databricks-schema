@@ -261,6 +261,24 @@ class TestErrors:
         with pytest.raises(DbmlParseError, match="@tags"):
             schemas_from_dbml(text)
 
+    @pytest.mark.parametrize("comment", [None, "", "text"])
+    def test_comment_round_trips_alongside_metadata(self, comment):
+        schema = Schema(
+            name="s",
+            comment=comment,
+            owner="bob",
+            grants={"analysts": ["USE_SCHEMA"]},
+            tables=[
+                Table(
+                    name="t",
+                    comment=comment,
+                    owner="bob",
+                    columns=[Column(name="a", data_type="int")],
+                )
+            ],
+        )
+        assert schema_from_dbml(schema_to_dbml(schema)) == schema
+
     @pytest.mark.parametrize("grants", ["not-json", '["SELECT"]', '{"bob": "SELECT"}'])
     def test_invalid_grants(self, grants):
         text = f"Table s.t {{\n a int\n Note: '@grants: {grants}'\n}}\n"

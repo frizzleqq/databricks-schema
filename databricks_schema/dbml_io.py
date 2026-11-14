@@ -129,7 +129,7 @@ def _note_text(comment: str | None, meta: dict[str, Any]) -> str | None:
         meta_lines.append(f"@{key}: {value}")
     if not meta_lines:
         return comment
-    if comment:
+    if comment is not None:
         return comment + "\n\n" + "\n".join(meta_lines)
     return "\n".join(meta_lines)
 
