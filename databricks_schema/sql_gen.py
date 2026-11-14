@@ -95,21 +95,28 @@ def _grant_stmts(
 
 
 def _pk_stmts(
-    tref: str, table_name: str, old_pk: PrimaryKey | None, new_pk: PrimaryKey | None
+    tref: str,
+    table_name: str,
+    old_pk: PrimaryKey | None,
+    new_pk: PrimaryKey | None,
+    allow_drop: bool,
 ) -> list[str]:
     """Generate DROP / ADD PRIMARY KEY statements.
 
-    old_pk = stored/target, new_pk = live/current.
+    old_pk = stored/target, new_pk = live/current. DROP is destructive, so it is commented out
+    unless allow_drop is True. When replacing a live PK, the ADD would fail while the old PK
+    still exists, so it is commented out along with the DROP.
     """
     stmts: list[str] = []
+    drop_skipped = new_pk is not None and not allow_drop
     if new_pk is not None:
-        stmts.append(f"ALTER TABLE {tref} DROP PRIMARY KEY IF EXISTS;")
+        drop_stmt = f"ALTER TABLE {tref} DROP PRIMARY KEY IF EXISTS;"
+        stmts.append(drop_stmt if allow_drop else f"-- {drop_stmt}")
     if old_pk is not None:
         cols = ", ".join(_q(c) for c in old_pk.columns)
         constraint_name = old_pk.name or f"pk_{table_name}"
-        stmts.append(
-            f"ALTER TABLE {tref} ADD CONSTRAINT {_q(constraint_name)} PRIMARY KEY ({cols});"
-        )
+        add_stmt = f"ALTER TABLE {tref} ADD CONSTRAINT {_q(constraint_name)} PRIMARY KEY ({cols});"
+        stmts.append(f"-- {add_stmt}" if drop_skipped else add_stmt)
     return stmts
 
 
@@ -119,33 +126,41 @@ def _fk_stmts(
     table_name: str,
     old_fks: list[ForeignKey],
     new_fks: list[ForeignKey],
+    allow_drop: bool,
 ) -> list[str]:
     """Generate DROP / ADD FOREIGN KEY statements.
 
-    FKs are matched by frozenset of their column names.
-    old_fks = stored/target, new_fks = live/current.
+    FKs are matched by frozenset of their column names; a match whose definition differs
+    (name or referenced table/columns) is replaced via DROP + ADD.
+    old_fks = stored/target, new_fks = live/current. DROP is destructive, so it is commented
+    out unless allow_drop is True; the ADD of a replaced FK is then commented out too.
     """
     old_by_cols = {frozenset(fk.columns): fk for fk in old_fks}
     new_by_cols = {frozenset(fk.columns): fk for fk in new_fks}
 
     stmts: list[str] = []
-    # FKs to drop: in live (new) but not in stored (old)
+    # FKs to drop: in live (new) but not in stored (old), or defined differently
     for cols_key, fk in new_by_cols.items():
-        if cols_key not in old_by_cols:
+        if old_by_cols.get(cols_key) != fk:
             cols_list = ", ".join(_q(c) for c in fk.columns)
-            stmts.append(f"ALTER TABLE {tref} DROP FOREIGN KEY IF EXISTS ({cols_list});")
+            drop_stmt = f"ALTER TABLE {tref} DROP FOREIGN KEY IF EXISTS ({cols_list});"
+            stmts.append(drop_stmt if allow_drop else f"-- {drop_stmt}")
 
-    # FKs to add: in stored (old) but not in live (new)
+    # FKs to add: in stored (old) but not in live (new), or defined differently
     for cols_key, fk in old_by_cols.items():
-        if cols_key not in new_by_cols:
-            fk_cols = ", ".join(_q(c) for c in fk.columns)
-            ref_cols = ", ".join(_q(c) for c in fk.ref_columns)
-            constraint_name = fk.name or f"fk_{table_name}_{'_'.join(fk.columns)}"
-            ref_tref = _table_ref(catalog, fk.ref_schema, fk.ref_table)
-            stmts.append(
-                f"ALTER TABLE {tref} ADD CONSTRAINT {_q(constraint_name)} "
-                f"FOREIGN KEY ({fk_cols}) REFERENCES {ref_tref} ({ref_cols});"
-            )
+        live_fk = new_by_cols.get(cols_key)
+        if live_fk == fk:
+            continue
+        fk_cols = ", ".join(_q(c) for c in fk.columns)
+        ref_cols = ", ".join(_q(c) for c in fk.ref_columns)
+        constraint_name = fk.name or f"fk_{table_name}_{'_'.join(fk.columns)}"
+        ref_tref = _table_ref(catalog, fk.ref_schema, fk.ref_table)
+        add_stmt = (
+            f"ALTER TABLE {tref} ADD CONSTRAINT {_q(constraint_name)} "
+            f"FOREIGN KEY ({fk_cols}) REFERENCES {ref_tref} ({ref_cols});"
+        )
+        replaces_live = live_fk is not None
+        stmts.append(f"-- {add_stmt}" if replaces_live and not allow_drop else add_stmt)
 
     return stmts
 
@@ -259,9 +274,13 @@ def _table_diff_stmts(
             elif fc.field == "grants":
                 stmts.extend(_grant_stmts("TABLE", tref, fc.old or {}, fc.new or {}, allow_drop))
             elif fc.field == "primary_key":
-                stmts.extend(_pk_stmts(tref, table_diff.name, fc.old, fc.new))
+                stmts.extend(_pk_stmts(tref, table_diff.name, fc.old, fc.new, allow_drop))
             elif fc.field == "foreign_keys":
-                stmts.extend(_fk_stmts(tref, catalog, table_diff.name, fc.old or [], fc.new or []))
+                stmts.extend(
+                    _fk_stmts(
+                        tref, catalog, table_diff.name, fc.old or [], fc.new or [], allow_drop
+                    )
+                )
             elif fc.field == "table_type":
                 stmts.append(f"-- TODO: unsupported change: table_type {fc.new!r} -> {fc.old!r}")
 
@@ -286,8 +305,8 @@ def schema_diff_to_sql(
         catalog_name: Catalog name for fully-qualified references.
         schema_diff: Diff result from diff_schemas() or a manually constructed SchemaDiff.
         stored_schema: The stored (local) Schema; required for "removed" and "modified" status.
-        allow_drop: If True, emit real DROP and REVOKE statements; otherwise emit commented-out
-            versions.
+        allow_drop: If True, emit real DROP (including PK/FK drops) and REVOKE statements;
+            otherwise emit commented-out versions.
 
     Returns:
         SQL string with statements separated by newlines.
