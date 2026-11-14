@@ -7,13 +7,16 @@ from urllib.parse import quote
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound, PermissionDenied
-from databricks.sdk.service.catalog import SecurableType
+from databricks.sdk.service.catalog import SecurableType, TableType
 
 from databricks_schema.models import Catalog, Column, ForeignKey, PrimaryKey, Schema, Table
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_SCHEMAS = {"information_schema"}
+
+# Views cannot carry PK/FK constraints, so their tables.get() lookup is skipped.
+_NO_CONSTRAINT_TABLE_TYPES = {TableType.VIEW, TableType.METRIC_VIEW}
 
 
 class CatalogExtractor:
@@ -71,6 +74,23 @@ class CatalogExtractor:
                 full_name,
             )
         return {p: sorted(privs) for p, privs in sorted(grants.items()) if privs}
+
+    def _fetch_constraints(self, full_name: str, table_type) -> list:
+        """Return a table's PK/FK constraints via tables.get().
+
+        tables.list() never populates table_constraints, so a per-table get is required.
+        """
+        if table_type in _NO_CONSTRAINT_TABLE_TYPES:
+            return []
+        try:
+            sdk_table = self.client.tables.get(quote(full_name, safe="."))
+        except NotFound:
+            logger.warning("Not found when fetching constraints for table '%s'", full_name)
+            return []
+        except PermissionDenied:
+            logger.warning("Permission denied when fetching constraints for table '%s'", full_name)
+            return []
+        return list(getattr(sdk_table, "table_constraints", None) or [])
 
     def iter_schemas(
         self,
@@ -145,7 +165,7 @@ class CatalogExtractor:
             else {}
         )
 
-        # tables.list returns full TableInfo (columns + constraints included) — no tables.get needed
+        # tables.list returns columns but never table_constraints; those come from tables.get
         sdk_tables = list(
             self.client.tables.list(catalog_name=catalog_name, schema_name=schema_name)
         )
@@ -225,7 +245,8 @@ class CatalogExtractor:
         primary_key: PrimaryKey | None = None
         foreign_keys: list[ForeignKey] = []
 
-        for constraint in list(getattr(sdk_table, "table_constraints", None) or []):
+        table_type = getattr(sdk_table, "table_type", None)
+        for constraint in self._fetch_constraints(full_name, table_type):
             pk = getattr(constraint, "primary_key_constraint", None)
             if pk is not None:
                 primary_key = PrimaryKey(
@@ -261,7 +282,7 @@ class CatalogExtractor:
         table_name = full_name.split(".")[-1]
         return Table(
             name=table_name,
-            table_type=getattr(sdk_table, "table_type", None),
+            table_type=table_type,
             comment=getattr(sdk_table, "comment", None),
             owner=getattr(sdk_table, "owner", None) if include_metadata else None,
             columns=columns,

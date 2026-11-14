@@ -165,8 +165,9 @@ class TestCatalogExtractor:
         pk_c.child_columns = ["order_id"]
         constraint = _make_constraint(pk=pk_c)
 
-        sdk_table = _make_sdk_table("orders", constraints=[constraint])
-        client.tables.list.return_value = [sdk_table]
+        # tables.list never returns constraints; they only come from tables.get
+        client.tables.list.return_value = [_make_sdk_table("orders")]
+        client.tables.get.return_value = _make_sdk_table("orders", constraints=[constraint])
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
@@ -193,8 +194,9 @@ class TestCatalogExtractor:
         fk_c.parent_columns = ["id"]
         constraint = _make_constraint(fk=fk_c)
 
-        sdk_table = _make_sdk_table("orders", constraints=[constraint])
-        client.tables.list.return_value = [sdk_table]
+        # tables.list never returns constraints; they only come from tables.get
+        client.tables.list.return_value = [_make_sdk_table("orders")]
+        client.tables.get.return_value = _make_sdk_table("orders", constraints=[constraint])
 
         catalog = extractor.extract_catalog("mycat")
         table = catalog.schemas[0].tables[0]
@@ -399,25 +401,65 @@ class TestCatalogExtractor:
         assert catalog.schemas[0].tables[0].tags == {}
         assert catalog.schemas[0].tables[0].columns[0].tags == {}
 
-    def test_tables_get_not_called(self):
-        """tables.list results are used directly — tables.get should never be called."""
-        extractor, client = self._extractor()
+    def _single_schema(self, client):
         sdk_catalog = MagicMock()
         sdk_catalog.comment = None
         client.catalogs.get.return_value = sdk_catalog
-
         s = MagicMock()
         s.name = "main"
         s.comment = None
         s.owner = None
         client.schemas.list.return_value = [s]
 
-        sdk_table = _make_sdk_table("orders")
-        client.tables.list.return_value = [sdk_table]
+    def test_constraints_fetched_via_tables_get(self):
+        """Constraints come from tables.get with the percent-encoded full name."""
+        extractor, client = self._extractor()
+        self._single_schema(client)
+        client.tables.list.return_value = [_make_sdk_table("my/orders")]
+        client.tables.get.return_value = _make_sdk_table("my/orders")
 
         extractor.extract_catalog("mycat")
 
+        client.tables.get.assert_called_once_with("mycat.main.my%2Forders")
+
+    def test_constraints_not_fetched_for_views(self):
+        extractor, client = self._extractor()
+        self._single_schema(client)
+        client.tables.list.return_value = [
+            _make_sdk_table("v", table_type_val="VIEW"),
+            _make_sdk_table("mv", table_type_val="METRIC_VIEW"),
+        ]
+
+        catalog = extractor.extract_catalog("mycat")
+
         client.tables.get.assert_not_called()
+        assert all(t.primary_key is None for t in catalog.schemas[0].tables)
+
+    def test_constraints_not_found_logs_warning_and_continues(self, caplog):
+        extractor, client = self._extractor()
+        self._single_schema(client)
+        client.tables.list.return_value = [_make_sdk_table("orders")]
+        client.tables.get.side_effect = NotFound("gone")
+
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat")
+
+        table = catalog.schemas[0].tables[0]
+        assert table.primary_key is None
+        assert table.foreign_keys == []
+        assert "mycat.main.orders" in caplog.text
+
+    def test_constraints_permission_denied_logs_warning_and_continues(self, caplog):
+        extractor, client = self._extractor()
+        self._single_schema(client)
+        client.tables.list.return_value = [_make_sdk_table("orders")]
+        client.tables.get.side_effect = PermissionDenied("nope")
+
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat")
+
+        assert catalog.schemas[0].tables[0].primary_key is None
+        assert "Permission denied" in caplog.text
 
     def test_column_tags_slash_in_name(self):
         """Column names containing slashes must be percent-encoded before tag lookup."""
