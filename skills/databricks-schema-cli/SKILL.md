@@ -1,12 +1,12 @@
 ---
 name: databricks-schema-cli
-description: Explore, snapshot, diff, and generate migration SQL for Databricks Unity Catalog schemas using the `databricks-schema` CLI. Use this whenever the user wants to list catalogs/schemas in a Databricks workspace, pull a Unity Catalog schema (tables, columns, keys, tags, grants) into version-controllable YAML/JSON, compare a live catalog against stored schema files or two schema directories against each other, validate schema files, or generate Spark SQL DDL to reconcile a catalog with a desired state — even if they just say "what's in this Databricks catalog" or "diff prod vs what's checked in" without naming the tool.
+description: Explore, snapshot, diff, and generate migration SQL for Databricks Unity Catalog schemas using the `databricks-schema` CLI. Use this whenever the user wants to list catalogs/schemas in a Databricks workspace, pull a Unity Catalog schema (tables, columns, keys, tags, grants) into version-controllable YAML/JSON or a DBML ER diagram (dbdiagram.io), compare a live catalog against stored schema files or two schema directories against each other, validate schema files, or generate Spark SQL DDL to reconcile a catalog with a desired state — even if they just say "what's in this Databricks catalog" or "diff prod vs what's checked in" without naming the tool.
 ---
 
 # Databricks Unity Catalog exploration (`databricks-schema`)
 
 `databricks-schema` is a CLI that talks to a Databricks workspace via the Databricks SDK and
-represents Unity Catalog schemas as YAML or JSON. Use it instead of writing ad-hoc SDK calls
+represents Unity Catalog schemas as YAML, JSON or DBML. Use it instead of writing ad-hoc SDK calls
 whenever the task is "look at / snapshot / diff / generate SQL for" a Unity Catalog schema.
 
 Call it as `databricks-schema <command> ...`. If the command isn't found, install it first (e.g.
@@ -42,7 +42,7 @@ Read this once — command sections below only call out what's *different* for t
 
 | Command(s) | Choices | Default | Controls |
 |---|---|---|---|
-| `extract` | `yaml`, `json` | `yaml` | File format of the extracted schema **content** |
+| `extract` | `yaml`, `json`, `dbml` | `yaml` | File format of the extracted schema **content** |
 | `diff`, `diff-files`, `validate`, `list-catalogs`, `list-schemas` | `text`, `json`, `yaml` | `text` | **Representation** of the result (`text` = human-readable) |
 | `json-schema` | `json`, `yaml` | `json` | Representation of the JSON Schema output itself |
 
@@ -72,7 +72,15 @@ databricks-schema extract <catalog>.<schema>.<table>      # single table, dotted
 
 Omitting `--output-dir` prints one `Catalog` document to stdout (`name` + `schemas: [...]`)
 covering all matching schemas; with it, one file per schema is written, named `<schema>.yaml`
-(or `.json`).
+(or `.json`). With `--format dbml`, the whole catalog is one DBML document instead — stdout, or
+`<output-dir>/<catalog>.dbml` with `--output-dir` (never one file per schema). Use it when the
+user wants an ER diagram (paste into dbdiagram.io); it round-trips losslessly, so a DBML
+directory works with `diff`/`generate-sql`/`validate`/`diff-files` too. Tags, owner,
+`table_type` and `storage_location` live as trailing `@key: value` lines inside notes (`@tags`
+is a JSON object) — keep that convention when hand-editing. For DBML directories, `--schema`
+matches schema names, not file names. Writing DBML always works, but *reading* it needs the
+optional extra — if a command fails with "requires the optional 'dbml' extra", reinstall with
+`uv tool install 'databricks-schema[dbml]'`.
 
 Shape of one schema (fields with no value are omitted entirely; foreign keys reference
 `ref_schema`+`ref_table` only — always the same catalog as the source table):
@@ -154,7 +162,7 @@ shape.
 |---|---|
 | 0 | no differences |
 | 1 | differences found (normal, not a failure) |
-| 2 | usage error — bad directory, mixed YAML+JSON, no schema files found, mismatched dotted-arg depth, or dotted syntax combined with `--schema`/a directory target |
+| 2 | usage error — bad directory, mixed formats (YAML/JSON/DBML) in one directory, no schema files found, invalid DBML, mismatched dotted-arg depth, or dotted syntax combined with `--schema`/a directory target |
 
 ## `validate` — sanity-check local files
 
@@ -162,7 +170,7 @@ shape.
 databricks-schema validate ./schemas/
 ```
 
-Structural integrity check on local YAML/JSON, no Databricks connection (e.g. after hand-editing
+Structural integrity check on local YAML/JSON/DBML, no Databricks connection (e.g. after hand-editing
 one). Exit `0` + `OK — N schema(s) validated` on success, `1` + one `ERROR:` line per issue
 otherwise. `--format json`/`yaml` gives `{"issues": [...]}` (`schema`, `table`, `message` per
 issue) — see `databricks-schema json-schema validate` for the exact shape.
@@ -201,9 +209,10 @@ extract's YAML/JSON) programmatically, instead of guessing from an example.
 | See what catalogs/schemas exist                              | `list-catalogs`, `list-schemas` |
 | Read/summarize a live schema's structure                     | `extract` (no `--output-dir`, use `--schema`) |
 | Snapshot a catalog for version control                       | `extract --output-dir` |
+| Get an ER diagram of a catalog                               | `extract --format dbml` |
 | Check if a catalog drifted from a checked-in snapshot         | `diff` |
 | Compare two schemas/tables directly (incl. differently-named) | `diff` with dotted `catalog.schema[.table]` args |
 | Check if two snapshot directories differ (no live access)    | `diff-files` |
-| Sanity-check hand-edited YAML/JSON before using it            | `validate` |
+| Sanity-check hand-edited YAML/JSON/DBML before using it       | `validate` |
 | Produce SQL to reconcile live catalog with a snapshot         | `generate-sql` |
 | Get the exact shape of any of the above before parsing it     | `json-schema` |

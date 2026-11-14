@@ -15,6 +15,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import DatabricksError, NotFound, PermissionDenied, Unauthenticated
 from pydantic import BaseModel, TypeAdapter
 
+from databricks_schema.dbml_io import DbmlDependencyError, DbmlParseError, catalog_to_dbml
 from databricks_schema.diff import (
     CatalogDiff,
     SchemaDiff,
@@ -29,10 +30,11 @@ from databricks_schema.models import Catalog, Schema, Table
 from databricks_schema.sql_gen import schema_diff_to_sql
 from databricks_schema.validate import ValidationResult, validate_schemas
 from databricks_schema.yaml_io import (
+    FORMAT_EXTENSIONS,
+    SchemaFormat,
     catalog_to_json,
     catalog_to_yaml,
-    schema_from_json,
-    schema_from_yaml,
+    load_schema_dir,
     schema_to_json,
     schema_to_yaml,
 )
@@ -158,7 +160,7 @@ def _find_table(catalog_obj: Catalog, schema_name: str, table_name: str) -> Tabl
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    """Extract Unity Catalog schemas to YAML or JSON files."""
+    """Extract Unity Catalog schemas to YAML, JSON or DBML files."""
     catalog_name, schema_name, table_name = _split_catalog_arg(args.catalog)
     if schema_name is not None and args.schema:
         print(
@@ -173,12 +175,18 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
 
     serializer = schema_to_json if args.fmt == "json" else schema_to_yaml
-    catalog_serializer = catalog_to_json if args.fmt == "json" else catalog_to_yaml
-    ext = ".json" if args.fmt == "json" else ".yaml"
+    catalog_serializer = {
+        "yaml": catalog_to_yaml,
+        "json": catalog_to_json,
+        "dbml": catalog_to_dbml,
+    }[args.fmt]
+    ext = FORMAT_EXTENSIONS[args.fmt]
 
     logger.info("Extracting catalog '%s'...", catalog_name)
 
-    if args.output_dir is None:
+    # DBML is one document per catalog (cross-schema refs must resolve within one file),
+    # so it is written as <output-dir>/<catalog>.dbml rather than one file per schema.
+    if args.output_dir is None or args.fmt == "dbml":
         catalog_obj = extractor.extract_catalog(
             catalog_name=catalog_name,
             schema_filter=schema_filter,
@@ -187,7 +195,14 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             include_tags=args.include_tags,
             include_grants=args.include_grants,
         )
-        print(catalog_serializer(catalog_obj))
+        if args.output_dir is None:
+            print(catalog_serializer(catalog_obj))
+            return
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        out_file = args.output_dir / f"{catalog_name}{ext}"
+        out_file.write_text(catalog_serializer(catalog_obj), encoding="utf-8")
+        logger.info("  Wrote %s", out_file)
+        logger.info("Done — %d schema(s) written to %s", len(catalog_obj.schemas), args.output_dir)
         return
 
     output_dir: Path = args.output_dir
@@ -210,7 +225,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 
 
 def _cmd_diff(args: argparse.Namespace) -> None:
-    """Compare Unity Catalog schemas against local YAML/JSON files, or against another catalog."""
+    """Compare Unity Catalog schemas against local schema files, or against another catalog."""
     target: Path = args.target
     live_catalog, live_schema, live_table = _split_catalog_arg(args.catalog)
 
@@ -399,25 +414,9 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
         print(f"Error: {schema_dir} is not a directory.", file=sys.stderr)
         sys.exit(2)
 
-    yaml_files = list(schema_dir.glob("*.yaml"))
-    json_files = list(schema_dir.glob("*.json"))
-    if yaml_files and json_files:
-        print("Error: mixed YAML and JSON files in schema directory.", file=sys.stderr)
-        sys.exit(2)
-    elif not yaml_files and not json_files:
-        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
-        sys.exit(2)
-    fmt = "json" if json_files else "yaml"
-    ext = ".json" if fmt == "json" else ".yaml"
-    loader = schema_from_json if fmt == "json" else schema_from_yaml
-
+    fmt = _detect_fmt(schema_dir)
     schema_filter_set: frozenset[str] | None = frozenset(args.schema) if args.schema else None
-    stored: dict[str, Schema] = {}
-    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
-        if schema_filter_set is not None and schema_file.stem not in schema_filter_set:
-            continue
-        schema = loader(schema_file.read_text(encoding="utf-8"))
-        stored[schema.name] = schema
+    stored = load_schema_dir(schema_dir, fmt, schema_filter_set)
 
     client = _make_client(args.host, args.token)
     extractor = CatalogExtractor(client=client, max_workers=args.workers)
@@ -472,17 +471,20 @@ def _cmd_generate_sql(args: argparse.Namespace) -> None:
             print()
 
 
-def _detect_fmt(schema_dir: Path) -> str:
-    """Auto-detect YAML or JSON format from files in a directory. Exits 2 on mixed or empty."""
-    yaml_files = list(schema_dir.glob("*.yaml"))
-    json_files = list(schema_dir.glob("*.json"))
-    if yaml_files and json_files:
-        print(f"Error: mixed YAML and JSON files in {schema_dir}.", file=sys.stderr)
+def _detect_fmt(schema_dir: Path) -> SchemaFormat:
+    """Auto-detect YAML, JSON or DBML format from files in a directory.
+
+    Exits 2 when the directory mixes formats or holds no schema files.
+    """
+    present = [fmt for fmt, ext in FORMAT_EXTENSIONS.items() if any(schema_dir.glob(f"*{ext}"))]
+    if len(present) > 1:
+        kinds = " and ".join(f.upper() for f in present)
+        print(f"Error: mixed {kinds} files in {schema_dir}.", file=sys.stderr)
         sys.exit(2)
-    elif not yaml_files and not json_files:
-        print(f"No YAML or JSON files found in {schema_dir}.", file=sys.stderr)
+    if not present:
+        print(f"No YAML, JSON or DBML files found in {schema_dir}.", file=sys.stderr)
         sys.exit(2)
-    return "json" if json_files else "yaml"
+    return present[0]
 
 
 def _cmd_validate(args: argparse.Namespace) -> None:
@@ -493,16 +495,8 @@ def _cmd_validate(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     fmt = _detect_fmt(schema_dir)
-    ext = ".json" if fmt == "json" else ".yaml"
-    loader = schema_from_json if fmt == "json" else schema_from_yaml
-
     schema_filter_set: frozenset[str] | None = frozenset(args.schema) if args.schema else None
-    schemas: dict[str, Schema] = {}
-    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
-        if schema_filter_set is not None and schema_file.stem not in schema_filter_set:
-            continue
-        schema = loader(schema_file.read_text(encoding="utf-8"))
-        schemas[schema.name] = schema
+    schemas = load_schema_dir(schema_dir, fmt, schema_filter_set)
 
     if not schemas:
         print("No schemas to validate.", file=sys.stderr)
@@ -607,7 +601,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # extract
     extract_p = subparsers.add_parser(
-        "extract", help="Extract Unity Catalog schemas to YAML files."
+        "extract", help="Extract Unity Catalog schemas to YAML, JSON or DBML files."
     )
     extract_p.add_argument(
         "catalog",
@@ -630,7 +624,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         dest="output_dir",
         metavar="DIR",
-        help="Output directory for per-schema YAML files",
+        help="Output directory for per-schema YAML/JSON files (DBML: one <catalog>.dbml file)",
     )
     extract_p.add_argument(
         "--include-metadata",
@@ -653,7 +647,7 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_p.add_argument(
         "--format",
         "-f",
-        choices=["yaml", "json"],
+        choices=["yaml", "json", "dbml"],
         default="yaml",
         dest="fmt",
         help="Output format (default: yaml)",
@@ -672,7 +666,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # diff
     diff_p = subparsers.add_parser(
         "diff",
-        help="Compare Unity Catalog schemas against local YAML/JSON files, or another catalog.",
+        help="Compare Unity Catalog schemas against local schema files, or another catalog.",
     )
     diff_p.add_argument(
         "catalog",
@@ -686,9 +680,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "target",
         type=Path,
         help=(
-            "Directory containing per-schema YAML/JSON files, or a second catalog to compare "
-            "directly (optionally dotted as catalog.schema[.table], matching the depth of "
-            "'catalog' — the two sides' schema/table names may differ)"
+            "Directory containing per-schema YAML/JSON files or DBML files, or a second catalog "
+            "to compare directly (optionally dotted as catalog.schema[.table], matching the "
+            "depth of 'catalog' — the two sides' schema/table names may differ)"
         ),
     )
     diff_p.add_argument(
@@ -735,7 +729,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gen_sql_p.add_argument("catalog", help="Catalog name")
     gen_sql_p.add_argument(
-        "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
+        "schema_dir",
+        type=Path,
+        help="Directory containing per-schema YAML/JSON files or DBML files",
     )
     gen_sql_p.add_argument(
         "--output-dir",
@@ -793,7 +789,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Validate local schema files for structural integrity (no Databricks connection).",
     )
     validate_p.add_argument(
-        "schema_dir", type=Path, help="Directory containing per-schema YAML or JSON files"
+        "schema_dir",
+        type=Path,
+        help="Directory containing per-schema YAML/JSON files or DBML files",
     )
     validate_p.add_argument(
         "--schema",
@@ -888,6 +886,9 @@ def main() -> None:
     except NotFound as e:
         print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
         print("Check that the catalog and schema names are correct.", file=sys.stderr)
+        sys.exit(2)
+    except (DbmlParseError, DbmlDependencyError) as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
     except (Unauthenticated, PermissionDenied, DatabricksError) as e:
         print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from databricks_schema.models import Catalog, Column, Schema, Table
-from databricks_schema.yaml_io import schema_from_json, schema_from_yaml
+from databricks_schema.yaml_io import SchemaFormat, load_schema_dir
 
 
 @dataclass
@@ -189,8 +189,8 @@ def diff_table_pair(
 def diff_schema_dirs(
     dir1: Path,
     dir2: Path,
-    fmt1: Literal["yaml", "json"] = "yaml",
-    fmt2: Literal["yaml", "json"] = "yaml",
+    fmt1: SchemaFormat = "yaml",
+    fmt2: SchemaFormat = "yaml",
     schema_names: frozenset[str] | None = None,
     include_metadata: bool = False,
     include_grants: bool = False,
@@ -204,23 +204,12 @@ def diff_schema_dirs(
     Schemas present in dir2 but not dir1 are reported as "added".
     Schemas present in both are compared with diff_schemas.
 
-    schema_names: if set, only files whose stem is in this set are loaded from either directory.
-    fmt1 / fmt2: file format for dir1 and dir2 respectively ("yaml" or "json").
+    schema_names: if set, only these schemas are loaded from either directory (matched on file
+                  stem for YAML/JSON, on schema name for DBML).
+    fmt1 / fmt2: file format for dir1 and dir2 respectively ("yaml", "json" or "dbml").
     """
-
-    def _load_dir(path: Path, fmt: Literal["yaml", "json"]) -> dict[str, Schema]:
-        ext = ".json" if fmt == "json" else ".yaml"
-        loader = schema_from_json if fmt == "json" else schema_from_yaml
-        schemas: dict[str, Schema] = {}
-        for f in sorted(path.glob(f"*{ext}")):
-            if schema_names is not None and f.stem not in schema_names:
-                continue
-            schema = loader(f.read_text(encoding="utf-8"))
-            schemas[schema.name] = schema
-        return schemas
-
-    stored = _load_dir(dir1, fmt1)
-    live = _load_dir(dir2, fmt2)
+    stored = load_schema_dir(dir1, fmt1, schema_names)
+    live = load_schema_dir(dir2, fmt2, schema_names)
 
     schema_diffs: list[SchemaDiff] = []
     for name, stored_schema in stored.items():
@@ -282,7 +271,7 @@ def diff_catalog_with_dir(
     schema_dir: Path,
     ignore_added: frozenset[str] = frozenset({"default"}),
     schema_names: frozenset[str] | None = None,
-    fmt: Literal["yaml", "json"] = "yaml",
+    fmt: SchemaFormat = "yaml",
     include_metadata: bool = False,
     include_grants: bool = False,
 ) -> CatalogDiff:
@@ -295,19 +284,12 @@ def diff_catalog_with_dir(
     For each schema in the catalog without a file: report as added,
     unless its name is in ignore_added (default: {"default"}).
 
-    schema_names: if set, only files whose stem is in this set are loaded.
-                  Use this when comparing a subset of schemas to avoid reporting
-                  unrelated schemas as removed.
-    fmt: file format to read ("yaml" or "json").
+    schema_names: if set, only these schemas are loaded (matched on file stem for YAML/JSON,
+                  on schema name for DBML). Use this when comparing a subset of schemas to
+                  avoid reporting unrelated schemas as removed.
+    fmt: file format to read ("yaml", "json" or "dbml").
     """
-    ext = ".json" if fmt == "json" else ".yaml"
-    loader = schema_from_json if fmt == "json" else schema_from_yaml
-    stored: dict[str, Schema] = {}
-    for schema_file in sorted(schema_dir.glob(f"*{ext}")):
-        if schema_names is not None and schema_file.stem not in schema_names:
-            continue
-        schema = loader(schema_file.read_text(encoding="utf-8"))
-        stored[schema.name] = schema
+    stored = load_schema_dir(schema_dir, fmt, schema_names)
 
     live = {s.name: s for s in catalog.schemas}
     schema_diffs: list[SchemaDiff] = []

@@ -11,7 +11,9 @@ import yaml
 from databricks.sdk.service.catalog import TableType
 
 from databricks_schema.cli import _json_default, _serialize_structured, main
+from databricks_schema.dbml_io import catalog_from_dbml, catalog_to_dbml
 from databricks_schema.models import Catalog, Column, PrimaryKey, Schema, Table
+from databricks_schema.yaml_io import schema_to_yaml
 
 # Importing cli disables propagation on the "databricks_schema" logger for real CLI runs;
 # undo that here so other test modules' caplog-based assertions still see log records.
@@ -415,6 +417,94 @@ class TestValidateJson:
         assert exit_code == 1
 
         assert yaml_data == json_data
+
+
+def _dbml_catalog() -> Catalog:
+    return Catalog(
+        name="mycat",
+        comment="My catalog",
+        schemas=[
+            Schema(
+                name="sales",
+                comment="Sales",
+                tables=[
+                    Table(
+                        name="orders",
+                        table_type=TableType.MANAGED,
+                        columns=[
+                            Column(name="id", data_type="bigint", nullable=False),
+                            Column(name="meta", data_type="struct<a:int>"),
+                        ],
+                        primary_key=PrimaryKey(columns=["id"]),
+                    )
+                ],
+            ),
+            Schema(name="crm"),
+        ],
+    )
+
+
+class TestDbmlFormat:
+    def test_extract_dbml_to_stdout(self, monkeypatch, capsys):
+        _mock_extractor(monkeypatch, {"mycat": _dbml_catalog()})
+        assert _run(monkeypatch, ["extract", "mycat", "-f", "dbml"]) == 0
+        out = capsys.readouterr().out
+        assert out.startswith('Project "mycat" {')
+        assert catalog_from_dbml(out) == _dbml_catalog()
+
+    def test_extract_dbml_writes_one_catalog_file(self, tmp_path, monkeypatch):
+        _mock_extractor(monkeypatch, {"mycat": _dbml_catalog()})
+        assert _run(monkeypatch, ["extract", "mycat", "-f", "dbml", "-o", str(tmp_path)]) == 0
+        assert [p.name for p in tmp_path.iterdir()] == ["mycat.dbml"]
+        text = (tmp_path / "mycat.dbml").read_text(encoding="utf-8")
+        assert catalog_from_dbml(text) == _dbml_catalog()
+
+    def test_diff_against_dbml_dir_no_changes(self, tmp_path, monkeypatch, capsys):
+        _mock_extractor(monkeypatch, {"mycat": _dbml_catalog()})
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
+        assert _run(monkeypatch, ["diff", "mycat", str(tmp_path)]) == 0
+        assert "No differences found." in capsys.readouterr().out
+
+    def test_diff_against_dbml_dir_detects_change(self, tmp_path, monkeypatch, capsys):
+        stored = _dbml_catalog()
+        stored.schemas[0].tables[0].columns[1].data_type = "string"
+        _mock_extractor(monkeypatch, {"mycat": _dbml_catalog()})
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(stored), encoding="utf-8")
+        assert _run(monkeypatch, ["diff", "mycat", str(tmp_path)]) == 1
+        assert "data_type: 'string' -> 'struct<a:int>'" in capsys.readouterr().out
+
+    def test_diff_files_dbml_against_yaml(self, tmp_path, monkeypatch, capsys):
+        dbml_dir, yaml_dir = tmp_path / "dbml", tmp_path / "yaml"
+        dbml_dir.mkdir()
+        yaml_dir.mkdir()
+        catalog = _dbml_catalog()
+        (dbml_dir / "mycat.dbml").write_text(catalog_to_dbml(catalog), encoding="utf-8")
+        for s in catalog.schemas:
+            (yaml_dir / f"{s.name}.yaml").write_text(schema_to_yaml(s), encoding="utf-8")
+        assert _run(monkeypatch, ["diff-files", str(dbml_dir), str(yaml_dir)]) == 0
+        assert "No differences found." in capsys.readouterr().out
+
+    def test_validate_dbml_dir_with_schema_filter(self, tmp_path, monkeypatch, capsys):
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
+        assert _run(monkeypatch, ["validate", str(tmp_path), "-s", "sales"]) == 0
+        assert "1 schema(s) validated" in capsys.readouterr().out
+
+    def test_mixed_dbml_and_yaml_exits_2(self, tmp_path, monkeypatch, capsys):
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
+        _write_schema(tmp_path, "sales", "name: sales\n")
+        assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
+        assert "mixed YAML and DBML files" in capsys.readouterr().err
+
+    def test_invalid_dbml_exits_2(self, tmp_path, monkeypatch, capsys):
+        (tmp_path / "bad.dbml").write_text("Table t {\n a int [nope]\n}\n", encoding="utf-8")
+        assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
+        assert "Invalid DBML" in capsys.readouterr().err
+
+    def test_reading_dbml_without_extra_exits_2(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr("databricks_schema.dbml_io.PYDBML_AVAILABLE", False)
+        (tmp_path / "mycat.dbml").write_text(catalog_to_dbml(_dbml_catalog()), encoding="utf-8")
+        assert _run(monkeypatch, ["validate", str(tmp_path)]) == 2
+        assert "databricks-schema[dbml]" in capsys.readouterr().err
 
 
 class TestDiffFilesGrants:
