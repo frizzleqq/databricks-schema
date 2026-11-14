@@ -18,7 +18,7 @@ uv run databricks-schema --help
 
 ```
 databricks_schema/
-  models.py      # Pydantic v2 models: Catalog, Schema, Table, Column, PrimaryKey, ForeignKey
+  models.py      # Pydantic v2 models: Catalog, Schema, Table, Column, PrimaryKey, ForeignKey (Schema/Table carry grants)
   extractor.py   # CatalogExtractor — wraps databricks-sdk
   yaml_io.py     # schema/catalog to/from YAML and JSON; _strip_empty removes None + empty collections
   diff.py        # diff_schemas / diff_catalogs / diff_catalog_with_dir / diff_schema_dirs; FieldChange, ColumnDiff, TableDiff, SchemaDiff, CatalogDiff
@@ -57,6 +57,8 @@ skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to dri
 - `TableType` is re-exported from `databricks.sdk.service.catalog` — do not redefine it
 - `--include-metadata` flag (on `extract`, `diff`, `generate-sql`, `diff-files`) adds `owner` to output/comparison; `extract` additionally includes `storage_location` in its output (not compared by `diff`/`generate-sql`/`diff-files`); excluded by default
 - `--include-tags` flag (on `extract`, `diff`, `generate-sql`) enables Unity Catalog tag lookups; excluded by default
+- `--include-grants` flag (on `extract`, `diff`, `generate-sql`, `diff-files`) adds `grants: dict[str, list[str]]` (principal → sorted privileges) on `Schema`/`Table` via `grants.list()` — direct grants only, never inherited/effective ones; diff functions take `include_grants` and ignore grants otherwise; a grants `FieldChange` holds only differing principals
+- `generate-sql` emits `GRANT` for stored-not-live privileges and `REVOKE` for live-not-stored; `REVOKE` is destructive and follows `--allow-drop`
 - `--quiet`/`-q` flag (on `extract`, `diff`, `generate-sql`, `diff-files`) raises the log level to suppress progress messages; errors always print
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)

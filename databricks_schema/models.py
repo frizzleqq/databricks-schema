@@ -31,6 +31,7 @@ class Table(BaseModel):
     comment: str | None = None
     owner: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    grants: dict[str, list[str]] = Field(default_factory=dict)
     storage_location: str | None = None
     columns: list[Column] = Field(default_factory=list)
     primary_key: PrimaryKey | None = None
@@ -42,6 +43,7 @@ class Schema(BaseModel):
     comment: str | None = None
     owner: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    grants: dict[str, list[str]] = Field(default_factory=dict)
     tables: list[Table] = Field(default_factory=list)
 
 

@@ -405,3 +405,53 @@ class TestColumnDiff:
         sql = schema_diff_to_sql("prod", sd, stored)
         assert "UNSET TAGS" in sql
         assert "'old'" in sql
+
+
+class TestGrants:
+    def _sql(self, live, stored, allow_drop=False):
+        sd = diff_schemas(live, stored, include_grants=True)
+        return schema_diff_to_sql("prod", sd, stored, allow_drop)
+
+    def test_schema_grant_added(self):
+        live = Schema(name="main")
+        stored = Schema(name="main", grants={"analysts": ["USE_SCHEMA", "SELECT"]})
+        sql = self._sql(live, stored)
+        assert sql == "GRANT SELECT, USE SCHEMA ON SCHEMA `prod`.`main` TO `analysts`;"
+
+    def test_schema_revoke_commented_by_default(self):
+        live = Schema(name="main", grants={"analysts": ["SELECT", "USE_SCHEMA"]})
+        stored = Schema(name="main", grants={"analysts": ["USE_SCHEMA"]})
+        sql = self._sql(live, stored)
+        assert sql == "-- REVOKE SELECT ON SCHEMA `prod`.`main` FROM `analysts`;"
+
+    def test_revoke_emitted_with_allow_drop(self):
+        live = Schema(name="main", grants={"old@x.com": ["ALL_PRIVILEGES"]})
+        stored = Schema(name="main")
+        sql = self._sql(live, stored, allow_drop=True)
+        assert sql == "REVOKE ALL PRIVILEGES ON SCHEMA `prod`.`main` FROM `old@x.com`;"
+
+    def test_table_grant_and_revoke_same_principal(self):
+        live = Schema(name="main", tables=[Table(name="t", grants={"eng": ["SELECT"]})])
+        stored = Schema(name="main", tables=[Table(name="t", grants={"eng": ["MODIFY"]})])
+        sql = self._sql(live, stored)
+        assert sql.splitlines() == [
+            "GRANT MODIFY ON TABLE `prod`.`main`.`t` TO `eng`;",
+            "-- REVOKE SELECT ON TABLE `prod`.`main`.`t` FROM `eng`;",
+        ]
+
+    def test_grants_emitted_when_creating_schema_and_tables(self):
+        stored = Schema(
+            name="main",
+            grants={"analysts": ["USE_SCHEMA"]},
+            tables=[Table(name="t", grants={"analysts": ["SELECT"]})],
+        )
+        sql = schema_diff_to_sql("prod", SchemaDiff(name="main", status="removed"), stored)
+        assert "GRANT USE SCHEMA ON SCHEMA `prod`.`main` TO `analysts`;" in sql
+        assert "GRANT SELECT ON TABLE `prod`.`main`.`t` TO `analysts`;" in sql
+
+    def test_grants_emitted_when_creating_table_in_existing_schema(self):
+        live = Schema(name="main")
+        stored = Schema(name="main", tables=[Table(name="t", grants={"a": ["SELECT"]})])
+        sql = self._sql(live, stored)
+        assert "CREATE TABLE IF NOT EXISTS `prod`.`main`.`t`" in sql
+        assert sql.endswith("GRANT SELECT ON TABLE `prod`.`main`.`t` TO `a`;")

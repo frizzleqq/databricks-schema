@@ -1,8 +1,8 @@
 import logging
 from unittest.mock import MagicMock
 
-from databricks.sdk.errors import NotFound
-from databricks.sdk.service.catalog import TableType
+from databricks.sdk.errors import NotFound, PermissionDenied
+from databricks.sdk.service.catalog import Privilege, TableType
 
 from databricks_schema.extractor import CatalogExtractor
 
@@ -465,3 +465,117 @@ class TestCatalogExtractor:
         catalog = extractor.extract_catalog("mycat", include_tags=False)
         assert len(catalog.schemas[0].tables) == 5
         assert {t.name for t in catalog.schemas[0].tables} == {"t0", "t1", "t2", "t3", "t4"}
+
+
+def _make_assignment(principal, privileges):
+    a = MagicMock()
+    a.principal = principal
+    a.privileges = [Privilege(p) for p in privileges]
+    return a
+
+
+class TestGrantExtraction:
+    def _setup(self, table_names=("orders",)):
+        client = MagicMock()
+        extractor = CatalogExtractor(client=client, max_workers=1)
+        sdk_catalog = MagicMock()
+        sdk_catalog.comment = None
+        client.catalogs.get.return_value = sdk_catalog
+        s = MagicMock()
+        s.name = "main"
+        s.comment = None
+        s.owner = None
+        client.schemas.list.return_value = [s]
+        client.tables.list.return_value = [_make_sdk_table(n) for n in table_names]
+        return extractor, client
+
+    def test_schema_and_table_grants_extracted(self):
+        extractor, client = self._setup()
+
+        def mock_list(securable_type, full_name):
+            if (securable_type, full_name) == ("SCHEMA", "mycat.main"):
+                return [_make_assignment("analysts", ["USE_SCHEMA", "SELECT"])]
+            if (securable_type, full_name) == ("TABLE", "mycat.main.orders"):
+                return [
+                    _make_assignment("engineers", ["SELECT", "MODIFY"]),
+                    _make_assignment("analysts", ["SELECT"]),
+                ]
+            return []
+
+        client.grants.list.side_effect = mock_list
+
+        catalog = extractor.extract_catalog("mycat", include_grants=True)
+        schema = catalog.schemas[0]
+        assert schema.grants == {"analysts": ["SELECT", "USE_SCHEMA"]}
+        # Principals and privileges are sorted for stable output
+        assert list(schema.tables[0].grants) == ["analysts", "engineers"]
+        assert schema.tables[0].grants["engineers"] == ["MODIFY", "SELECT"]
+
+    def test_uses_direct_grants_only(self):
+        extractor, client = self._setup()
+        client.grants.list.return_value = []
+
+        extractor.extract_catalog("mycat", include_grants=True)
+
+        assert client.grants.list.call_count == 2  # one schema + one table
+        client.grants.list_effective.assert_not_called()
+        client.grants.get_effective.assert_not_called()
+
+    def test_grants_excluded_by_default(self):
+        extractor, client = self._setup()
+
+        catalog = extractor.extract_catalog("mycat")
+
+        client.grants.list.assert_not_called()
+        assert catalog.schemas[0].grants == {}
+        assert catalog.schemas[0].tables[0].grants == {}
+
+    def test_deleted_principal_skipped_with_warning(self, caplog):
+        extractor, client = self._setup(table_names=())
+        client.grants.list.return_value = [
+            _make_assignment(None, ["SELECT"]),
+            _make_assignment("analysts", ["USE_SCHEMA"]),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat", include_grants=True)
+
+        assert catalog.schemas[0].grants == {"analysts": ["USE_SCHEMA"]}
+        assert any("without principal" in r.message for r in caplog.records)
+
+    def test_principal_with_no_privileges_omitted(self):
+        extractor, client = self._setup(table_names=())
+        client.grants.list.return_value = [_make_assignment("analysts", [])]
+
+        catalog = extractor.extract_catalog("mycat", include_grants=True)
+
+        assert catalog.schemas[0].grants == {}
+
+    def test_permission_denied_logs_warning_and_continues(self, caplog):
+        extractor, client = self._setup()
+        client.grants.list.side_effect = PermissionDenied("no MANAGE")
+
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat", include_grants=True)
+
+        assert catalog.schemas[0].tables[0].grants == {}
+        assert any("Permission denied" in r.message for r in caplog.records)
+
+    def test_not_found_logs_warning_and_continues(self, caplog):
+        extractor, client = self._setup()
+        client.grants.list.side_effect = NotFound("gone")
+
+        with caplog.at_level(logging.WARNING, logger="databricks_schema.extractor"):
+            catalog = extractor.extract_catalog("mycat", include_grants=True)
+
+        assert catalog.schemas[0].grants == {}
+        assert any("Not found" in r.message for r in caplog.records)
+
+    def test_full_name_percent_encoded(self):
+        extractor, client = self._setup(table_names=("my table/x",))
+        client.grants.list.return_value = []
+
+        extractor.extract_catalog("mycat", include_grants=True)
+
+        names = [c.args[1] for c in client.grants.list.call_args_list]
+        assert "mycat.main.my%20table%2Fx" in names

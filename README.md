@@ -104,12 +104,18 @@ name: main
 comment: Main production schema
 tags:
   env: prod
+grants:
+  analysts:
+    - USE_SCHEMA
 tables:
   - name: users
     table_type: MANAGED
     comment: User accounts
     tags:
       domain: identity
+    grants:
+      analysts:
+        - SELECT
     columns:
       - name: id
         data_type: bigint
@@ -206,6 +212,12 @@ Include Unity Catalog tags in the output (extra API calls per entity; excluded b
 databricks-schema extract <catalog> --output-dir ./schemas/ --include-tags
 ```
 
+Include grants (principal → privileges) on schemas and tables. Only grants made directly on each object are extracted — privileges inherited from a parent catalog or schema are left out, so they don't show up repeatedly on every child (one extra API call per schema/table; excluded by default):
+
+```bash
+databricks-schema extract <catalog> --output-dir ./schemas/ --include-grants
+```
+
 Include additional metadata (`owner`, `storage_location`) in the output:
 
 ```bash
@@ -264,6 +276,12 @@ Include `owner` in the comparison (excluded by default):
 databricks-schema diff <catalog> ./schemas/ --include-metadata
 ```
 
+Include direct grants in the comparison (excluded by default; without it, grants in the files are ignored):
+
+```bash
+databricks-schema diff <catalog> ./schemas/ --include-grants
+```
+
 Get the same comparison as structured JSON or YAML instead of the `+`/`-`/`~` tree (exit codes unchanged) — useful for scripts or agents:
 
 ```bash
@@ -285,7 +303,7 @@ Write one `.sql` file per schema to a directory instead:
 databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/
 ```
 
-Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`) are emitted as SQL comments by default. Pass `--allow-drop` to emit them as executable statements:
+Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`, `REVOKE`) are emitted as SQL comments by default. Pass `--allow-drop` to emit them as executable statements:
 
 ```bash
 databricks-schema generate-sql <catalog> ./schemas/ --allow-drop
@@ -309,6 +327,12 @@ Include `owner` in the comparison (excluded by default):
 databricks-schema generate-sql <catalog> ./schemas/ --include-metadata
 ```
 
+Include direct grants in the comparison, emitting `GRANT` for privileges in the files but not live and (commented-out unless `--allow-drop`) `REVOKE` for privileges live but not in the files:
+
+```bash
+databricks-schema generate-sql <catalog> ./schemas/ --include-grants
+```
+
 ### `validate`
 
 Validate local schema files for structural integrity (no Databricks connection needed):
@@ -322,7 +346,7 @@ Pass `--format json` or `--format yaml` for an `{"issues": [...]}` document inst
 ### `diff-files`
 
 Compare two local directories of schema files (no Databricks connection needed). Same output,
-exit codes, `--format json`/`yaml`, and `--schema` / `--include-metadata` flags as `diff`:
+exit codes, `--format json`/`yaml`, and `--schema` / `--include-metadata` / `--include-grants` flags as `diff`:
 
 ```bash
 databricks-schema diff-files ./schemas-prod/ ./schemas-test/
@@ -356,6 +380,10 @@ catalog = extractor.extract_catalog("my_catalog", schema_filter=["main", "raw"])
 
 # Include Unity Catalog tags (extra API calls per entity; excluded by default)
 catalog = extractor.extract_catalog("my_catalog", include_tags=True)
+
+# Include direct (non-inherited) grants on schemas and tables; compare them with
+# diff_schemas(..., include_grants=True) and friends
+catalog = extractor.extract_catalog("my_catalog", include_grants=True)
 
 # Include additional metadata (owner, storage_location)
 catalog = extractor.extract_catalog("my_catalog", include_metadata=True)

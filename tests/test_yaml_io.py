@@ -191,3 +191,26 @@ class TestCatalogJsonRoundTrip:
         text = catalog_to_json(cat)
         data = json.loads(text)
         assert "comment" not in data
+
+
+class TestGrantsSerialization:
+    def test_grants_round_trip_yaml(self):
+        schema = Schema(
+            name="main",
+            grants={"analysts": ["USE_SCHEMA"]},
+            tables=[Table(name="t", grants={"eng": ["MODIFY", "SELECT"]})],
+        )
+        text = schema_to_yaml(schema)
+        data = yaml.safe_load(text)
+        assert data["grants"] == {"analysts": ["USE_SCHEMA"]}
+        assert data["tables"][0]["grants"] == {"eng": ["MODIFY", "SELECT"]}
+        assert schema_from_yaml(text) == schema
+
+    def test_grants_round_trip_json(self):
+        schema = Schema(name="main", grants={"analysts": ["USE_SCHEMA"]})
+        assert schema_from_json(schema_to_json(schema)) == schema
+
+    def test_empty_grants_stripped(self):
+        data = yaml.safe_load(schema_to_yaml(Schema(name="main", tables=[Table(name="t")])))
+        assert "grants" not in data
+        assert "grants" not in data["tables"][0]

@@ -13,11 +13,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.1.4"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e0/2d/a891ca51311197f6ad14a7ef42e2399f36cf2f9bd44752b3dc4eab60fdc5/certifi-2026.1.4.tar.gz", hash = "sha256:ac726dd470482006e014ad384921ed6438c457018f4b3d204aea4281258b2120", size = 154268, upload-time = "2026-01-04T02:42:41.825Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/ad/3cc14f097111b4de0040c83a525973216457bbeeb63739ef1ed275c1c021/certifi-2026.1.4-py3-none-any.whl", hash = "sha256:9943707519e4add1115f44c2bc244f782c0249876bf51b6599fee1ffbedd685c", size = 152900, upload-time = "2026-01-04T02:42:40.15Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -233,7 +233,7 @@ wheels = [
 
 [[package]]
 name = "databricks-schema"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },
@@ -250,7 +250,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "databricks-sdk", specifier = ">=0.64.0" },
+    { name = "databricks-sdk", specifier = ">=0.121.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
@@ -264,16 +264,18 @@ dev = [
 
 [[package]]
 name = "databricks-sdk"
-version = "0.91.0"
+version = "0.166.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "certifi" },
     { name = "google-auth" },
     { name = "protobuf" },
     { name = "requests" },
+    { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/af/a9/83dee5b4bbea94f21c4990aafdb1b1893d25d5bbbe5cd9a95ed2afaf0d42/databricks_sdk-0.91.0.tar.gz", hash = "sha256:7b16f424f509609dd86cb69073a9a80a755c00a7b4be8cdaac3595ce3421a274", size = 857905, upload-time = "2026-02-19T08:22:21.415Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/db/46a845a2c193f2c509f3ee7a190973e55ef90aa188c08a7cb04ab2cd0213/databricks_sdk-0.166.0.tar.gz", hash = "sha256:56dc99da1cf99a60d514cc4548d026ef623789762c311280cfa205e8f58a3093", size = 1268887, upload-time = "2026-11-12T04:25:43.972Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/38/3afd8da94fa076226c470f33632d6df726c469738c01224068f009357985/databricks_sdk-0.91.0-py3-none-any.whl", hash = "sha256:f4481780e66a4c7d24d9d2acdf6778efdb82031532852ccc42b8619b81d0f73f", size = 808425, upload-time = "2026-02-19T08:22:19.161Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/bc/3f253050d69c160df263c5b85fe453fadfdd93189bb9ce84e1393cc17308/databricks_sdk-0.166.0-py3-none-any.whl", hash = "sha256:925d955a23ecd614ed021c37ed92b8407accd5da1bfd9d466e6da15cbc336630", size = 1211154, upload-time = "2026-11-12T04:25:41.868Z" },
 ]
 
 [[package]]
