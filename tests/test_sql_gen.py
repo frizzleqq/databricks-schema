@@ -252,7 +252,47 @@ class TestTableModified:
         )
         sd = diff_schemas(live, stored)
         sql = schema_diff_to_sql("prod", sd, stored)
-        assert "DROP PRIMARY KEY IF EXISTS" in sql
+        assert "-- ALTER TABLE `prod`.`main`.`t` DROP PRIMARY KEY IF EXISTS;" in sql
+
+    def test_primary_key_dropped_allow_drop(self):
+        stored = _schema("main", tables=[Table(name="t", primary_key=None)])
+        live = _schema(
+            "main", tables=[Table(name="t", primary_key=PrimaryKey(name="pk_t", columns=["id"]))]
+        )
+        sd = diff_schemas(live, stored)
+        sql = schema_diff_to_sql("prod", sd, stored, allow_drop=True)
+        assert "ALTER TABLE `prod`.`main`.`t` DROP PRIMARY KEY IF EXISTS;" in sql.splitlines()
+        assert "-- ALTER TABLE `prod`.`main`.`t` DROP PRIMARY KEY" not in sql
+
+    def test_primary_key_replaced_commented_without_allow_drop(self):
+        """The ADD would fail while the live PK exists, so it is commented out with the DROP."""
+        stored = _schema(
+            "main",
+            tables=[Table(name="t", primary_key=PrimaryKey(name="pk_t", columns=["id", "v"]))],
+        )
+        live = _schema(
+            "main", tables=[Table(name="t", primary_key=PrimaryKey(name="pk_t", columns=["id"]))]
+        )
+        sd = diff_schemas(live, stored)
+        sql = schema_diff_to_sql("prod", sd, stored)
+        assert "-- ALTER TABLE `prod`.`main`.`t` DROP PRIMARY KEY IF EXISTS;" in sql
+        assert "-- ALTER TABLE `prod`.`main`.`t` ADD CONSTRAINT `pk_t` PRIMARY KEY" in sql
+
+    def test_primary_key_replaced_allow_drop(self):
+        stored = _schema(
+            "main",
+            tables=[Table(name="t", primary_key=PrimaryKey(name="pk_t", columns=["id", "v"]))],
+        )
+        live = _schema(
+            "main", tables=[Table(name="t", primary_key=PrimaryKey(name="pk_t", columns=["id"]))]
+        )
+        sd = diff_schemas(live, stored)
+        sql = schema_diff_to_sql("prod", sd, stored, allow_drop=True)
+        lines = [ln for ln in sql.splitlines() if "PRIMARY KEY" in ln]
+        assert lines == [
+            "ALTER TABLE `prod`.`main`.`t` DROP PRIMARY KEY IF EXISTS;",
+            "ALTER TABLE `prod`.`main`.`t` ADD CONSTRAINT `pk_t` PRIMARY KEY (`id`, `v`);",
+        ]
 
     def test_primary_key_auto_name(self):
         stored = _schema(
@@ -290,7 +330,75 @@ class TestTableModified:
         live = _schema("main", tables=[Table(name="t", foreign_keys=[fk])])
         sd = diff_schemas(live, stored)
         sql = schema_diff_to_sql("prod", sd, stored)
-        assert "DROP FOREIGN KEY IF EXISTS (`org_id`);" in sql
+        assert "-- ALTER TABLE `prod`.`main`.`t` DROP FOREIGN KEY IF EXISTS (`org_id`);" in sql
+
+    def test_foreign_key_dropped_allow_drop(self):
+        fk = ForeignKey(
+            name="fk_org",
+            columns=["org_id"],
+            ref_schema="orgs",
+            ref_table="orgs",
+            ref_columns=["id"],
+        )
+        stored = _schema("main", tables=[Table(name="t", foreign_keys=[])])
+        live = _schema("main", tables=[Table(name="t", foreign_keys=[fk])])
+        sd = diff_schemas(live, stored)
+        sql = schema_diff_to_sql("prod", sd, stored, allow_drop=True)
+        assert (
+            "ALTER TABLE `prod`.`main`.`t` DROP FOREIGN KEY IF EXISTS (`org_id`);"
+            in sql.splitlines()
+        )
+        assert "-- " not in sql
+
+    def test_foreign_key_ref_changed_same_columns(self):
+        """An FK on the same columns pointing elsewhere is replaced, not silently ignored."""
+        stored_fk = ForeignKey(
+            name="fk_org",
+            columns=["org_id"],
+            ref_schema="orgs",
+            ref_table="orgs",
+            ref_columns=["id"],
+        )
+        live_fk = ForeignKey(
+            name="fk_org",
+            columns=["org_id"],
+            ref_schema="old",
+            ref_table="orgs",
+            ref_columns=["id"],
+        )
+        stored = _schema("main", tables=[Table(name="t", foreign_keys=[stored_fk])])
+        live = _schema("main", tables=[Table(name="t", foreign_keys=[live_fk])])
+        sd = diff_schemas(live, stored)
+
+        sql = schema_diff_to_sql("prod", sd, stored)
+        assert "-- ALTER TABLE `prod`.`main`.`t` DROP FOREIGN KEY IF EXISTS (`org_id`);" in sql
+        assert "-- ALTER TABLE `prod`.`main`.`t` ADD CONSTRAINT `fk_org`" in sql
+        assert "REFERENCES `prod`.`orgs`.`orgs` (`id`);" in sql
+
+        sql = schema_diff_to_sql("prod", sd, stored, allow_drop=True)
+        assert sql.splitlines() == [
+            "ALTER TABLE `prod`.`main`.`t` DROP FOREIGN KEY IF EXISTS (`org_id`);",
+            "ALTER TABLE `prod`.`main`.`t` ADD CONSTRAINT `fk_org` FOREIGN KEY (`org_id`) "
+            "REFERENCES `prod`.`orgs`.`orgs` (`id`);",
+        ]
+
+    def test_foreign_key_added_alongside_existing_not_commented(self):
+        """A new FK on other columns needs no DROP, so it is emitted even without allow_drop."""
+        keep = ForeignKey(
+            name="fk_a", columns=["a"], ref_schema="s", ref_table="x", ref_columns=["id"]
+        )
+        new = ForeignKey(
+            name="fk_b", columns=["b"], ref_schema="s", ref_table="y", ref_columns=["id"]
+        )
+        stored = _schema("main", tables=[Table(name="t", foreign_keys=[keep, new])])
+        live = _schema("main", tables=[Table(name="t", foreign_keys=[keep])])
+        sd = diff_schemas(live, stored)
+        sql = schema_diff_to_sql("prod", sd, stored)
+        assert sql.splitlines() == [
+            "ALTER TABLE `prod`.`main`.`t` ADD CONSTRAINT `fk_b` FOREIGN KEY (`b`) "
+            "REFERENCES `prod`.`s`.`y` (`id`);"
+        ]
+        assert "DROP" not in sql
 
     def test_foreign_key_auto_constraint_name(self):
         fk = ForeignKey(

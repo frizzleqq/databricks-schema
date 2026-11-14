@@ -70,7 +70,7 @@ skills/databricks-schema-cli/SKILL.md  # Agent Skill: teaches an AI agent to dri
 - `diff` command exits 0 (no changes) or 1 (differences found) — useful in CI
 - Diff result types are dataclasses (not Pydantic); comparison functions are pure (no SDK calls)
 - `generate-sql` auto-detects format from files; exits 2 on mixed formats or empty directory; invalid DBML exits 2
-- `generate-sql` destructive statements commented out by default; `--allow-drop` emits real DROPs
+- `generate-sql` destructive statements commented out by default; `--allow-drop` emits real DROPs (incl. `DROP PRIMARY KEY`/`DROP FOREIGN KEY`); a replaced PK/FK's `ADD` is commented out with its DROP
 - `sql_gen.py` is pure (no SDK, no I/O); diff direction: `FieldChange.old` = stored (target), `.new` = live
 - FK refs in SQL use same catalog as the source table (`ref_schema` + `ref_table` from model)
 - Unsupported field changes (`table_type`) emit `-- TODO: unsupported change: …` comments

@@ -367,7 +367,7 @@ Write one `.sql` file per schema to a directory instead:
 databricks-schema generate-sql <catalog> ./schemas/ --output-dir ./migrations/
 ```
 
-Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`, `REVOKE`) are emitted as SQL comments by default. Pass `--allow-drop` to emit them as executable statements:
+Destructive statements (`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN`, `DROP PRIMARY KEY`, `DROP FOREIGN KEY`, `REVOKE`) are emitted as SQL comments by default. When a primary or foreign key has to be replaced (dropped and re-added), its `ADD CONSTRAINT` is commented out as well, since it would fail while the old key still exists. Pass `--allow-drop` to emit them as executable statements:
 
 ```bash
 databricks-schema generate-sql <catalog> ./schemas/ --allow-drop
